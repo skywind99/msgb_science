@@ -4,6 +4,8 @@ import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
 import { z } from "zod";
 
+declare const process: { env: Record<string, string | undefined> };
+
 export async function registerRoutes(
   httpServer: Server,
   app: Express
@@ -26,7 +28,24 @@ export async function registerRoutes(
     res.json(post);
   });
 
+  const checkAdminPassword = (req: any, res: any): boolean => {
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const provided = req.headers["x-admin-password"] as string | undefined;
+    if (!adminPassword || provided !== adminPassword) {
+      res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
+      return false;
+    }
+    return true;
+  };
+
+  app.post("/api/admin/verify", (req, res) => {
+    if (checkAdminPassword(req, res)) {
+      res.json({ ok: true });
+    }
+  });
+
   app.post(api.posts.create.path, async (req, res) => {
+    if (!checkAdminPassword(req, res)) return;
     try {
       const input = api.posts.create.input.parse(req.body);
       const post = await storage.createPost(input);
@@ -41,16 +60,6 @@ export async function registerRoutes(
       throw err;
     }
   });
-
-  const checkAdminPassword = (req: any, res: any): boolean => {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    const provided = req.headers["x-admin-password"] as string | undefined;
-    if (!adminPassword || provided !== adminPassword) {
-      res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
-      return false;
-    }
-    return true;
-  };
 
   app.patch(api.posts.update.path, async (req, res) => {
     if (!checkAdminPassword(req, res)) return;

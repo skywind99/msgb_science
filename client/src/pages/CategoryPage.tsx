@@ -3,6 +3,7 @@ import { usePosts } from "@/hooks/use-posts";
 import { PostCard, PostCardSkeleton } from "@/components/PostCard";
 import { CreatePostDialog } from "@/components/CreatePostDialog";
 import { NAV_ITEMS } from "@/components/Navigation";
+import { useAdmin } from "@/contexts/admin";
 import { FileQuestion } from "lucide-react";
 
 interface Props {
@@ -11,7 +12,8 @@ interface Props {
 
 export default function CategoryPage({ categoryId }: Props) {
   const { data: posts, isLoading } = usePosts(categoryId);
-  
+  const { isAdmin } = useAdmin();
+
   // Find category metadata
   const categoryInfo = NAV_ITEMS.find(item => item.id === categoryId);
   const title = categoryInfo?.label || "게시판";
@@ -32,7 +34,7 @@ export default function CategoryPage({ categoryId }: Props) {
             </div>
             
             <div>
-              <CreatePostDialog category={categoryId} categoryLabel={title} />
+              {isAdmin && <CreatePostDialog category={categoryId} categoryLabel={title} />}
             </div>
           </motion.div>
         </div>
@@ -67,7 +69,7 @@ export default function CategoryPage({ categoryId }: Props) {
               <p className="text-muted-foreground text-lg mb-8 max-w-md">
                 이 카테고리에 등록된 첫 번째 게시글의 주인공이 되어보세요!
               </p>
-              <CreatePostDialog category={categoryId} categoryLabel={title} />
+              {isAdmin && <CreatePostDialog category={categoryId} categoryLabel={title} />}
             </motion.div>
           )}
         </div>
