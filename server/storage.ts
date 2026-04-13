@@ -1,4 +1,4 @@
-import { posts, type Post, type InsertPost } from "@shared/schema";
+import { posts, type Post, type InsertPost } from "../shared/schema";
 import { db } from "./db";
 import { eq, desc } from "drizzle-orm";
 
