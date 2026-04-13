@@ -1,5 +1,5 @@
-import { posts, type Post, type InsertPost } from "../shared/schema";
-import { db } from "./db";
+import { posts, type Post, type InsertPost } from "../shared/schema.js";
+import { db } from "./db.js";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
