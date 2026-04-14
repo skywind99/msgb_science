@@ -3,6 +3,8 @@ import { Link } from "wouter";
 import { ArrowRight, BookOpen, FlaskConical, Users, Globe } from "lucide-react";
 import { usePosts } from "@/hooks/use-posts";
 import { PostCard, PostCardSkeleton } from "@/components/PostCard";
+import { CreatePostDialog } from "@/components/CreatePostDialog";
+import { useAdmin } from "@/contexts/admin";
 
 const FEATURES = [
   {
@@ -37,6 +39,7 @@ const FEATURES = [
 
 export default function Home() {
   const { data: posts, isLoading } = usePosts("home");
+  const { isAdmin } = useAdmin();
 
   return (
     <div className="min-h-screen pb-20">
@@ -148,12 +151,15 @@ export default function Home() {
                 과학중점학교의 생생한 활동 현장을 전해드립니다.
               </p>
             </div>
-            <Link
-              href="/class"
-              className="hidden sm:flex items-center gap-1 text-primary font-bold hover:gap-2 transition-all"
-            >
-              모든 소식 보기 <ArrowRight className="w-4 h-4" />
-            </Link>
+            <div className="flex items-center gap-4">
+              {isAdmin && <CreatePostDialog category="home" categoryLabel="학교 새소식" />}
+              <Link
+                href="/class"
+                className="hidden sm:flex items-center gap-1 text-primary font-bold hover:gap-2 transition-all"
+              >
+                모든 소식 보기 <ArrowRight className="w-4 h-4" />
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
