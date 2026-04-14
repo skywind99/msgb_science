@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Post, type ContentBlock } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { ArrowLeft, Calendar, Pencil, Trash2, Lock, Plus, ImageIcon, AlignLeft } from "lucide-react";
+import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import {
@@ -13,10 +13,17 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { useAdmin } from "@/contexts/admin";
 
 const isImageUrl = (str?: string | null): str is string => {
   if (!str) return false;
@@ -43,8 +50,6 @@ const CATEGORY_ROUTES: Record<string, string> = {
   student_program: "/student",
   local_community: "/community",
 };
-
-type PendingAction = "edit" | "delete" | null;
 
 function BlockEditor({
   blocks,
@@ -123,11 +128,7 @@ export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-
-  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null);
-  const [password, setPassword] = useState("");
-  const [passwordError, setPasswordError] = useState("");
+  const { isAdmin, password } = useAdmin();
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -184,35 +185,17 @@ export default function PostDetail() {
     },
   });
 
-  const openPasswordDialog = (action: PendingAction) => {
-    setPendingAction(action);
-    setPassword("");
-    setPasswordError("");
-    setPasswordDialogOpen(true);
-  };
-
-  const handlePasswordConfirm = async () => {
-    if (!password.trim()) { setPasswordError("비밀번호를 입력해 주세요."); return; }
-    const res = await fetch(`/api/posts/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-password": password },
-      body: JSON.stringify({}),
-    });
-    if (res.status === 401) { setPasswordError("비밀번호가 올바르지 않습니다."); return; }
-    setPasswordDialogOpen(false);
-    if (pendingAction === "edit" && post) {
-      setEditTitle(post.title);
-      setEditImageUrl(post.imageUrl ?? "");
-      const existingBlocks = (post.blocks as ContentBlock[] | null);
-      setEditBlocks(
-        existingBlocks && existingBlocks.length > 0
-          ? existingBlocks
-          : [{ imageUrl: "", content: post.content ?? "" }]
-      );
-      setEditOpen(true);
-    } else if (pendingAction === "delete") {
-      setDeleteOpen(true);
-    }
+  const openEdit = () => {
+    if (!post) return;
+    setEditTitle(post.title);
+    setEditImageUrl(post.imageUrl ?? "");
+    const existingBlocks = post.blocks as ContentBlock[] | null;
+    setEditBlocks(
+      existingBlocks && existingBlocks.length > 0
+        ? existingBlocks
+        : [{ imageUrl: "", content: post.content ?? "" }]
+    );
+    setEditOpen(true);
   };
 
   const handleEditSubmit = () => {
@@ -251,7 +234,7 @@ export default function PostDetail() {
 
   const backRoute = CATEGORY_ROUTES[post.category] ?? "/";
   const categoryLabel = CATEGORY_LABELS[post.category] ?? post.category;
-  const postBlocks = (post.blocks as ContentBlock[] | null);
+  const postBlocks = post.blocks as ContentBlock[] | null;
   const displayBlocks: ContentBlock[] =
     postBlocks && postBlocks.length > 0
       ? postBlocks
@@ -259,57 +242,76 @@ export default function PostDetail() {
 
   return (
     <div className="min-h-screen bg-background pb-20">
-      {/* Header (no image) */}
+      {/* Header */}
       <div className="bg-gradient-to-br from-primary/8 via-background to-blue-50/40 border-b border-primary/10 pt-14 pb-10">
         <div className="max-w-3xl mx-auto px-4">
-          <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-bold mb-4">
-            {categoryLabel}
-          </span>
-          <h1 className="text-2xl md:text-4xl font-black text-foreground leading-tight">{post.title}</h1>
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <span className="inline-block px-3 py-1 rounded-full bg-primary/10 text-primary border border-primary/20 text-xs font-bold mb-4">
+                {categoryLabel}
+              </span>
+              <h1 className="text-2xl md:text-4xl font-black text-foreground leading-tight mb-3">
+                {post.title}
+              </h1>
+              {/* 날짜 - 제목 아래 */}
+              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Calendar className="w-3.5 h-3.5" />
+                {post.createdAt ? format(new Date(post.createdAt), "yyyy년 MM월 dd일") : ""}
+              </div>
+            </div>
+
+            {/* 관리자 버튼 - 오른쪽 상단 */}
+            {isAdmin && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" className="shrink-0 mt-1">
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={openEdit}>
+                    <Pencil className="w-4 h-4 mr-2" /> 수정
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" /> 삭제
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 py-10">
-        {/* Back + actions */}
-        <div className="flex items-center justify-between mb-8">
-          <button
-            onClick={() => navigate(backRoute)}
-            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
-            data-testid="button-back"
-          >
-            <ArrowLeft className="w-4 h-4" /> 목록으로
-          </button>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => openPasswordDialog("edit")} data-testid="button-edit">
-              <Pencil className="w-4 h-4 mr-1" /> 수정
-            </Button>
-            <Button
-              variant="outline" size="sm"
-              className="text-destructive hover:bg-destructive hover:text-destructive-foreground"
-              onClick={() => openPasswordDialog("delete")}
-              data-testid="button-delete"
-            >
-              <Trash2 className="w-4 h-4 mr-1" /> 삭제
-            </Button>
+      {/* 대표 이미지 */}
+      {post.imageUrl && (
+        <div className="max-w-3xl mx-auto px-4 pt-8">
+          <div className="rounded-2xl overflow-hidden border border-border shadow-md">
+            <img
+              src={post.imageUrl}
+              alt={post.title}
+              className="w-full object-cover max-h-[480px]"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+            />
           </div>
         </div>
+      )}
 
-        {/* Meta */}
-        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-10">
-          <Calendar className="w-4 h-4" />
-          {post.createdAt ? format(new Date(post.createdAt), "yyyy년 MM월 dd일") : ""}
-        </div>
-
-        {/* Blocks */}
+      <div className="max-w-3xl mx-auto px-4 py-10">
+        {/* 본문 블록 */}
         <div className="space-y-8">
           {displayBlocks.map((block, idx) => {
             const imgSrc = isImageUrl(block.imageUrl) ? block.imageUrl
                          : isImageUrl(block.content) ? block.content
                          : null;
+            // 대표 이미지와 동일하면 블록에서 중복 표시 안 함
+            const skipImg = imgSrc && imgSrc === post.imageUrl && idx === 0 && !postBlocks;
             const textContent = isImageUrl(block.content) ? null : (block.content || null);
             return (
               <div key={idx}>
-                {imgSrc && (
+                {imgSrc && !skipImg && (
                   <div className="mb-4 rounded-2xl overflow-hidden border border-border shadow-md">
                     <img
                       src={imgSrc}
@@ -328,37 +330,18 @@ export default function PostDetail() {
             );
           })}
         </div>
-      </div>
 
-      {/* Password Dialog */}
-      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Lock className="w-5 h-5 text-primary" /> 관리자 인증
-            </DialogTitle>
-          </DialogHeader>
-          <div className="py-2 space-y-3">
-            <p className="text-sm text-muted-foreground">
-              {pendingAction === "edit" ? "수정" : "삭제"}하려면 관리자 비밀번호를 입력하세요.
-            </p>
-            <Input
-              type="password"
-              placeholder="비밀번호 입력"
-              value={password}
-              onChange={(e) => { setPassword(e.target.value); setPasswordError(""); }}
-              onKeyDown={(e) => e.key === "Enter" && handlePasswordConfirm()}
-              data-testid="input-admin-password"
-              autoFocus
-            />
-            {passwordError && <p className="text-sm text-destructive">{passwordError}</p>}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>취소</Button>
-            <Button onClick={handlePasswordConfirm} data-testid="button-confirm-password">확인</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        {/* 목록으로 - 본문 아래 */}
+        <div className="mt-16 pt-8 border-t border-border">
+          <button
+            onClick={() => navigate(backRoute)}
+            className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors text-sm font-medium"
+            data-testid="button-back"
+          >
+            <ArrowLeft className="w-4 h-4" /> 목록으로
+          </button>
+        </div>
+      </div>
 
       {/* Edit Dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
