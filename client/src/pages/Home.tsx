@@ -136,12 +136,17 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
             rel="noopener noreferrer"
             className="block group"
           >
-            {/* 썸네일 — 제목 키워드 기반 Unsplash 이미지 */}
+            {/* 썸네일 — 원본 이미지 우선, 없을 때만 Unsplash fallback */}
             <div className="relative h-48 w-full overflow-hidden">
               <img
-                src={getScienceImage(news.title)}
+                src={news.imageUrl || getScienceImage(news.title)}
                 alt={news.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                onError={(e) => {
+                  const img = e.target as HTMLImageElement;
+                  const fallback = getScienceImage(news.title);
+                  if (img.src !== fallback) img.src = fallback;
+                }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
               {/* 출처 뱃지 */}
@@ -177,7 +182,7 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
                 {news.title}
               </h3>
               {news.summary && (
-                <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2 mb-4">
+                <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-4">
                   {news.summary}
                 </p>
               )}
