@@ -50,7 +50,7 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     let summary = "";
     if (summaryMatch) {
       const raw = summaryMatch[1].replace(/<[^>]+>/g, "").trim();
-      summary = raw.length > 120 ? raw.slice(0, 120) + "…" : raw;
+      summary = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
     }
 
     // 링크
@@ -62,14 +62,13 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
       ? "https://www.sciencetimes.co.kr" + href
       : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
 
-    // 이미지
-    const afterBlock = html.slice(m.index, m.index + 800);
-    const imgMatch = afterBlock.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
-    const rawImageUrl = imgMatch
+    // 이미지 — 현재 블록부터 다음 sub_txt 사이 구간에서만 추출 (항목간 겹침 방지)
+    const blockEnd = m.index + m[0].length;
+    const nextBlockIdx = html.indexOf('class="sub_txt"', blockEnd);
+    const imgArea = html.slice(blockEnd, nextBlockIdx > 0 ? nextBlockIdx : blockEnd + 1200);
+    const imgMatch = imgArea.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
+    const imageUrl = imgMatch
       ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
-      : null;
-    const imageUrl = rawImageUrl
-      ? "/api/image-proxy?url=" + encodeURIComponent(rawImageUrl)
       : null;
 
     // 날짜
