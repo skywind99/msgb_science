@@ -42,7 +42,7 @@ async function fetchScienceNews(): Promise<ScienceNewsItem> {
   //const series = seriesMatch
   //  ? seriesMatch[1].replace(/<[^>]+>/g, "").trim()
   //: "기획·칼럼";
-  const series = seriesMatch = "기획·칼럼";
+  const series = "기획·칼럼";
   
   // 제목 — sub_txt 안의 <b> 태그
   const titleMatch = block.match(/class="sub_txt"[\s\S]*?<b>([\s\S]*?)<\/b>/);
