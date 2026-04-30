@@ -32,11 +32,16 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
   const html = await res.text();
 
   const items: ScienceNewsItem[] = [];
-  const subTxtRegex = /class="sub_txt"([\s\S]*?)(?=class="sub_txt"|<\/ul>)/g;
+
+  // <li> 단위로 파싱 — 제목/요약/링크/이미지가 모두 같은 <li> 안에 존재
+  const liRegex = /<li[\s\S]*?<\/li>/g;
   let m: RegExpExecArray | null;
 
-  while ((m = subTxtRegex.exec(html)) !== null && items.length < 5) {
-    const block = m[1];
+  while ((m = liRegex.exec(html)) !== null && items.length < 5) {
+    const block = m[0];
+
+    // sub_txt 없는 li 스킵
+    if (!block.includes("sub_txt")) continue;
 
     // 제목
     const titleMatch = block.match(/<b>([\s\S]*?)<\/b>/);
@@ -62,19 +67,15 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
       ? "https://www.sciencetimes.co.kr" + href
       : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
 
-    // 이미지 — 현재 블록부터 다음 sub_txt 사이 구간에서만 추출 (항목간 겹침 방지)
-    const blockEnd = m.index + m[0].length;
-    const nextBlockIdx = html.indexOf('class="sub_txt"', blockEnd);
-    const imgArea = html.slice(blockEnd, nextBlockIdx > 0 ? nextBlockIdx : blockEnd + 1200);
-    const imgMatch = imgArea.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
+    // 이미지 — 같은 <li> 블록 안에서만 추출
+    const imgMatch = block.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
     const imageUrl = imgMatch
       ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
       : null;
 
     // 날짜
-    const beforeBlock = html.slice(Math.max(0, m.index - 400), m.index);
-    const dateMatches = beforeBlock.match(/(\d{4}-\d{2}-\d{2})/g);
-    const date = dateMatches ? dateMatches[dateMatches.length - 1] : "";
+    const dateMatch = block.match(/(\d{4}-\d{2}-\d{2})/);
+    const date = dateMatch ? dateMatch[1] : "";
 
     items.push({ title, summary, imageUrl, link, date, series: "기획·칼럼" });
   }
@@ -115,29 +116,6 @@ export async function registerRoutes(
   });
 
   // ── 사이언스타임즈 최신 기사 목록 ────────────────────────
-  // image proxy (PNG hotlink 차단 우회)
-  app.get("/api/image-proxy", async (req, res) => {
-    const url = req.query.url as string;
-    if (!url || !url.startsWith("https://www.sciencetimes.co.kr/")) {
-      return res.status(400).end();
-    }
-    try {
-      const imgRes = await fetch(url, {
-        headers: {
-          "Referer": "https://www.sciencetimes.co.kr/",
-          "User-Agent": "Mozilla/5.0 (compatible; school-site/1.0)",
-        },
-      });
-      const contentType = imgRes.headers.get("content-type") || "image/jpeg";
-      const buffer = await imgRes.arrayBuffer();
-      res.setHeader("Content-Type", contentType);
-      res.setHeader("Cache-Control", "public, max-age=86400");
-      res.send(Buffer.from(buffer));
-    } catch {
-      res.status(502).end();
-    }
-  });
-
   app.get("/api/science-news", async (_req, res) => {
     try {
       const news = await fetchScienceNews();
