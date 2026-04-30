@@ -8,34 +8,10 @@ import { useAdmin } from "@/contexts/admin";
 import { useEffect, useState, useCallback } from "react";
 
 const FEATURES = [
-  {
-    title: "첨단 과학실",
-    desc: "최신 기자재를 갖춘 융합 과학 실험실",
-    icon: FlaskConical,
-    color: "bg-blue-100 text-blue-600",
-    href: "/lab",
-  },
-  {
-    title: "창의융합과정",
-    desc: "미래 사회를 주도할 융합형 인재 양성",
-    icon: BookOpen,
-    color: "bg-indigo-100 text-indigo-600",
-    href: "/career",
-  },
-  {
-    title: "학생중심연구",
-    desc: "스스로 탐구하고 문제를 해결하는 프로젝트",
-    icon: Users,
-    color: "bg-sky-100 text-sky-600",
-    href: "/student",
-  },
-  {
-    title: "지역연계활동",
-    desc: "마을 교육 공동체와 함께하는 과학 나눔",
-    icon: Globe,
-    color: "bg-cyan-100 text-cyan-600",
-    href: "/community",
-  },
+  { title: "첨단 과학실", desc: "최신 기자재를 갖춘 융합 과학 실험실", icon: FlaskConical, color: "bg-blue-100 text-blue-600", href: "/lab" },
+  { title: "창의융합과정", desc: "미래 사회를 주도할 융합형 인재 양성", icon: BookOpen, color: "bg-indigo-100 text-indigo-600", href: "/career" },
+  { title: "학생중심연구", desc: "스스로 탐구하고 문제를 해결하는 프로젝트", icon: Users, color: "bg-sky-100 text-sky-600", href: "/student" },
+  { title: "지역연계활동", desc: "마을 교육 공동체와 함께하는 과학 나눔", icon: Globe, color: "bg-cyan-100 text-cyan-600", href: "/community" },
 ];
 
 interface ScienceNewsItem {
@@ -45,6 +21,25 @@ interface ScienceNewsItem {
   link: string;
   date: string;
   series: string;
+}
+
+// 제목 키워드 → Unsplash 대체 이미지 (원본 없을 때만 사용)
+const SCIENCE_IMAGES: { keywords: string[]; url: string }[] = [
+  { keywords: ["우주", "달", "화성", "별", "천문", "망원경", "위성", "로켓", "아르테미스", "NASA", "행성", "은하"], url: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=800&q=80" },
+  { keywords: ["AI", "인공지능", "딥러닝", "머신러닝", "로봇", "자율주행", "반도체", "디지털", "알고리즘"], url: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=800&q=80" },
+  { keywords: ["생명", "유전자", "DNA", "세포", "뇌", "신경", "의학", "치료", "바이러스", "백신", "암", "혈액", "당뇨"], url: "https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=800&q=80" },
+  { keywords: ["기후", "환경", "탄소", "온난화", "북극", "빙하", "에너지", "태양광", "풍력", "지구"], url: "https://images.unsplash.com/photo-1421789665209-c9b2a435e3dc?w=800&q=80" },
+  { keywords: ["물리", "화학", "양자", "핵", "초전도", "레이저", "플라즈마", "원소", "분자"], url: "https://images.unsplash.com/photo-1628595351029-c2bf17511435?w=800&q=80" },
+  { keywords: ["바다", "해양", "수산", "어류", "산호", "심해"], url: "https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=800&q=80" },
+  { keywords: ["축제", "전시", "과학관", "교육", "학생", "연구", "실험"], url: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=800&q=80" },
+];
+const DEFAULT_SCIENCE_IMAGE = "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80";
+
+function getFallbackImage(title: string): string {
+  for (const { keywords, url } of SCIENCE_IMAGES) {
+    if (keywords.some((k) => title.includes(k))) return url;
+  }
+  return DEFAULT_SCIENCE_IMAGE;
 }
 
 function useScienceNews() {
@@ -64,28 +59,6 @@ function useScienceNews() {
   return { newsList, loading };
 }
 
-// 기사 제목 키워드 → Unsplash 배경 이미지
-const SCIENCE_IMAGES: { keywords: string[]; url: string }[] = [
-  { keywords: ["우주", "달", "화성", "별", "천문", "망원경", "위성", "로켓", "아르테미스", "NASA", "행성", "은하"], url: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=800&q=80" },
-  { keywords: ["AI", "인공지능", "딥러닝", "머신러닝", "로봇", "자율주행", "챗봇", "GPT", "반도체", "디지털"], url: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=800&q=80" },
-  { keywords: ["생명", "유전자", "DNA", "세포", "뇌", "신경", "의학", "치료", "바이러스", "백신", "암", "혈액", "당뇨"], url: "https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=800&q=80" },
-  { keywords: ["기후", "환경", "탄소", "온난화", "북극", "빙하", "에너지", "태양광", "풍력", "지구"], url: "https://images.unsplash.com/photo-1421789665209-c9b2a435e3dc?w=800&q=80" },
-  { keywords: ["물리", "화학", "양자", "핵", "소립자", "초전도", "레이저", "플라즈마", "원소", "분자"], url: "https://images.unsplash.com/photo-1628595351029-c2bf17511435?w=800&q=80" },
-  { keywords: ["수학", "통계", "모델", "시뮬레이션", "알고리즘", "데이터"], url: "https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=800&q=80" },
-  { keywords: ["바다", "해양", "수산", "어류", "산호", "심해"], url: "https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=800&q=80" },
-  { keywords: ["공룡", "화석", "고생물", "진화", "지질"], url: "https://images.unsplash.com/photo-1601823984263-9c3c45af9c10?w=800&q=80" },
-  { keywords: ["축제", "전시", "과학관", "교육", "학생", "연구"], url: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=800&q=80" },
-];
-const DEFAULT_SCIENCE_IMAGE = "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80";
-
-function getScienceImage(title: string): string {
-  for (const { keywords, url } of SCIENCE_IMAGES) {
-    if (keywords.some((k) => title.includes(k))) return url;
-  }
-  return DEFAULT_SCIENCE_IMAGE;
-}
-
-// 슬라이더 컴포넌트
 function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(1);
@@ -100,13 +73,13 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
     setIndex((i) => (i + 1) % newsList.length);
   }, [newsList.length]);
 
-  // 5초마다 자동 슬라이드
+  // 8초마다 자동 슬라이드
   useEffect(() => {
     if (newsList.length <= 1) return;
     const timer = setInterval(() => {
       setDirection(1);
       setIndex((i) => (i + 1) % newsList.length);
-    }, 5000);
+    }, 8000);
     return () => clearInterval(timer);
   }, [newsList.length]);
 
@@ -120,7 +93,6 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
 
   return (
     <div className="relative w-full lg:w-[340px] shrink-0">
-      {/* 카드 */}
       <div className="relative overflow-hidden rounded-2xl border border-border shadow-md bg-white">
         <AnimatePresence custom={direction} mode="wait">
           <motion.a
@@ -136,23 +108,25 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
             rel="noopener noreferrer"
             className="block group"
           >
-            {/* 썸네일 — 원본 이미지 우선, 없을 때만 Unsplash fallback */}
+            {/* 썸네일 — 원본 이미지 우선, 없거나 실패 시 키워드 기반 Unsplash */}
             <div className="relative h-48 w-full overflow-hidden">
               <img
-                src={news.imageUrl || getScienceImage(news.title)}
+                src={news.imageUrl ?? getFallbackImage(news.title)}
                 alt={news.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 onError={(e) => {
                   const img = e.target as HTMLImageElement;
-                  const fallback = getScienceImage(news.title);
+                  const fallback = getFallbackImage(news.title);
                   if (img.src !== fallback) img.src = fallback;
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
+
               {/* 출처 뱃지 */}
               <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">
                 사이언스타임즈
               </div>
+
               {/* 인디케이터 */}
               {newsList.length > 1 && (
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
@@ -164,8 +138,8 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
                         setDirection(i > index ? 1 : -1);
                         setIndex(i);
                       }}
-                      className={`w-1.5 h-1.5 rounded-full transition-all ${
-                        i === index ? "bg-white w-4" : "bg-white/50"
+                      className={`h-1.5 rounded-full transition-all duration-300 ${
+                        i === index ? "bg-white w-4" : "bg-white/50 w-1.5"
                       }`}
                     />
                   ))}
@@ -175,9 +149,6 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
 
             {/* 본문 */}
             <div className="p-5">
-              <p className="text-xs font-semibold text-primary mb-2">
-                {news.series}
-              </p>
               <h3 className="text-base font-bold text-foreground leading-snug mb-2 line-clamp-2 group-hover:text-primary transition-colors">
                 {news.title}
               </h3>
@@ -197,7 +168,7 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
         </AnimatePresence>
       </div>
 
-      {/* 화살표 버튼 — 카드 안쪽 양 옆 */}
+      {/* 화살표 버튼 */}
       {newsList.length > 1 && (
         <>
           <button
@@ -290,7 +261,6 @@ export default function Home() {
                 <div className="bg-white rounded-2xl border border-border shadow-md overflow-hidden animate-pulse">
                   <div className="h-48 bg-muted" />
                   <div className="p-5 space-y-3">
-                    <div className="h-3 w-24 bg-muted rounded" />
                     <div className="h-5 bg-muted rounded" />
                     <div className="h-5 w-4/5 bg-muted rounded" />
                     <div className="h-3 bg-muted rounded" />
@@ -320,17 +290,13 @@ export default function Home() {
                   className="p-8 rounded-3xl bg-card border border-border shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group cursor-pointer h-full"
                   data-testid={`button-feature-${idx}`}
                 >
-                  <div
-                    className={`w-14 h-14 rounded-2xl ${feature.color} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}
-                  >
+                  <div className={`w-14 h-14 rounded-2xl ${feature.color} flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300`}>
                     <feature.icon className="w-7 h-7" />
                   </div>
                   <h3 className="text-xl font-bold text-foreground mb-3 group-hover:text-primary transition-colors">
                     {feature.title}
                   </h3>
-                  <p className="text-muted-foreground leading-relaxed">
-                    {feature.desc}
-                  </p>
+                  <p className="text-muted-foreground leading-relaxed">{feature.desc}</p>
                 </motion.div>
               </Link>
             ))}
@@ -343,19 +309,12 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-end justify-between mb-12">
             <div>
-              <h2 className="text-3xl font-bold text-foreground mb-2">
-                학교 새소식
-              </h2>
-              <p className="text-muted-foreground">
-                과학중점학교의 생생한 활동 현장을 전해드립니다.
-              </p>
+              <h2 className="text-3xl font-bold text-foreground mb-2">학교 새소식</h2>
+              <p className="text-muted-foreground">과학중점학교의 생생한 활동 현장을 전해드립니다.</p>
             </div>
             <div className="flex items-center gap-4">
               {isAdmin && <CreatePostDialog category="home" categoryLabel="학교 새소식" />}
-              <Link
-                href="/class"
-                className="hidden sm:flex items-center gap-1 text-primary font-bold hover:gap-2 transition-all"
-              >
+              <Link href="/class" className="hidden sm:flex items-center gap-1 text-primary font-bold hover:gap-2 transition-all">
                 모든 소식 보기 <ArrowRight className="w-4 h-4" />
               </Link>
             </div>
@@ -363,19 +322,13 @@ export default function Home() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {isLoading ? (
-              Array(3)
-                .fill(0)
-                .map((_, i) => <PostCardSkeleton key={i} />)
+              Array(3).fill(0).map((_, i) => <PostCardSkeleton key={i} />)
             ) : posts && posts.length > 0 ? (
-              posts
-                .slice(0, 3)
-                .map((post) => <PostCard key={post.id} post={post} />)
+              posts.slice(0, 3).map((post) => <PostCard key={post.id} post={post} />)
             ) : (
               <div className="col-span-full py-12 text-center bg-white rounded-2xl border border-dashed border-border">
                 <BookOpen className="w-12 h-12 text-muted-foreground/50 mx-auto mb-4" />
-                <p className="text-lg font-medium text-muted-foreground">
-                  아직 등록된 소식이 없습니다.
-                </p>
+                <p className="text-lg font-medium text-muted-foreground">아직 등록된 소식이 없습니다.</p>
               </div>
             )}
           </div>
