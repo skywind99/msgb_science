@@ -65,8 +65,11 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     // 이미지
     const afterBlock = html.slice(m.index, m.index + 800);
     const imgMatch = afterBlock.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
-    const imageUrl = imgMatch
+    const rawImageUrl = imgMatch
       ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
+      : null;
+    const imageUrl = rawImageUrl
+      ? "/api/image-proxy?url=" + encodeURIComponent(rawImageUrl)
       : null;
 
     // 날짜
@@ -113,6 +116,29 @@ export async function registerRoutes(
   });
 
   // ── 사이언스타임즈 최신 기사 목록 ────────────────────────
+  // image proxy (PNG hotlink 차단 우회)
+  app.get("/api/image-proxy", async (req, res) => {
+    const url = req.query.url as string;
+    if (!url || !url.startsWith("https://www.sciencetimes.co.kr/")) {
+      return res.status(400).end();
+    }
+    try {
+      const imgRes = await fetch(url, {
+        headers: {
+          "Referer": "https://www.sciencetimes.co.kr/",
+          "User-Agent": "Mozilla/5.0 (compatible; school-site/1.0)",
+        },
+      });
+      const contentType = imgRes.headers.get("content-type") || "image/jpeg";
+      const buffer = await imgRes.arrayBuffer();
+      res.setHeader("Content-Type", contentType);
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      res.send(Buffer.from(buffer));
+    } catch {
+      res.status(502).end();
+    }
+  });
+
   app.get("/api/science-news", async (_req, res) => {
     try {
       const news = await fetchScienceNews();
