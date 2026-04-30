@@ -39,10 +39,10 @@ async function fetchScienceNews(): Promise<ScienceNewsItem> {
 
   // 시리즈명 — <dt> 안 텍스트
   const seriesMatch = block.match(/<dt[^>]*>([\s\S]*?)<\/dt>/);
-  const series = seriesMatch
-    ? seriesMatch[1].replace(/<[^>]+>/g, "").trim()
-    : "기획·칼럼";
-
+  //const series = seriesMatch
+//    ? seriesMatch[1].replace(/<[^>]+>/g, "").trim()
+    //: "기획·칼럼";
+const series = seriesMatch = "기획·칼럼";
   // 제목 — sub_txt 안의 <b> 태그
   const titleMatch = block.match(/class="sub_txt"[\s\S]*?<b>([\s\S]*?)<\/b>/);
   const title = titleMatch
