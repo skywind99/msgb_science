@@ -20,26 +20,25 @@ interface ScienceNewsItem {
   imageUrl: string | null;
   link: string;
   date: string;
-  series: string;
 }
 
-// 제목 키워드 → Unsplash 대체 이미지 (원본 없을 때만 사용)
+// 제목 키워드 → Unsplash 대체 이미지 (원본 없거나 로드 실패 시만 사용)
 const SCIENCE_IMAGES: { keywords: string[]; url: string }[] = [
   { keywords: ["우주", "달", "화성", "별", "천문", "망원경", "위성", "로켓", "아르테미스", "NASA", "행성", "은하"], url: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=800&q=80" },
-  { keywords: ["AI", "인공지능", "딥러닝", "머신러닝", "로봇", "자율주행", "반도체", "디지털", "알고리즘"], url: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=800&q=80" },
+  { keywords: ["AI", "인공지능", "딥러닝", "머신러닝", "로봇", "자율주행", "반도체", "디지털"], url: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=800&q=80" },
   { keywords: ["생명", "유전자", "DNA", "세포", "뇌", "신경", "의학", "치료", "바이러스", "백신", "암", "혈액", "당뇨"], url: "https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=800&q=80" },
   { keywords: ["기후", "환경", "탄소", "온난화", "북극", "빙하", "에너지", "태양광", "풍력", "지구"], url: "https://images.unsplash.com/photo-1421789665209-c9b2a435e3dc?w=800&q=80" },
   { keywords: ["물리", "화학", "양자", "핵", "초전도", "레이저", "플라즈마", "원소", "분자"], url: "https://images.unsplash.com/photo-1628595351029-c2bf17511435?w=800&q=80" },
   { keywords: ["바다", "해양", "수산", "어류", "산호", "심해"], url: "https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=800&q=80" },
   { keywords: ["축제", "전시", "과학관", "교육", "학생", "연구", "실험"], url: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=800&q=80" },
 ];
-const DEFAULT_SCIENCE_IMAGE = "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80";
+const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80";
 
 function getFallbackImage(title: string): string {
   for (const { keywords, url } of SCIENCE_IMAGES) {
     if (keywords.some((k) => title.includes(k))) return url;
   }
-  return DEFAULT_SCIENCE_IMAGE;
+  return DEFAULT_IMAGE;
 }
 
 function useScienceNews() {
@@ -108,7 +107,7 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
             rel="noopener noreferrer"
             className="block group"
           >
-            {/* 썸네일 — 원본 이미지 우선, 없거나 실패 시 키워드 기반 Unsplash */}
+            {/* 썸네일: 원본 이미지 우선, 없거나 실패 시 키워드 Unsplash */}
             <div className="relative h-48 w-full overflow-hidden">
               <img
                 src={news.imageUrl ?? getFallbackImage(news.title)}
