@@ -12,7 +12,6 @@ interface ScienceNewsItem {
   imageUrl: string | null;
   link: string;
   date: string;
-  series: string;
 }
 
 // 캐시 (1시간)
@@ -33,15 +32,18 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
 
   const items: ScienceNewsItem[] = [];
 
-  // <li> 단위로 파싱 — 제목/요약/링크/이미지가 모두 같은 <li> 안에 존재
-  const liRegex = /<li[\s\S]*?<\/li>/g;
-  let m: RegExpExecArray | null;
+  // sub_txt 위치 전부 찾기
+  const positions: number[] = [];
+  let pos = 0;
+  while ((pos = html.indexOf('class="sub_txt"', pos)) !== -1) {
+    positions.push(pos);
+    pos++;
+  }
 
-  while ((m = liRegex.exec(html)) !== null && items.length < 5) {
-    const block = m[0];
-
-    // sub_txt 없는 li 스킵
-    if (!block.includes("sub_txt")) continue;
+  for (let i = 0; i < Math.min(positions.length, 5); i++) {
+    const start = positions[i];
+    const end = i + 1 < positions.length ? positions[i + 1] : start + 2000;
+    const block = html.slice(start, end);
 
     // 제목
     const titleMatch = block.match(/<b>([\s\S]*?)<\/b>/);
@@ -61,23 +63,22 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     // 링크
     const linkMatch = block.match(/href="([^"]*nscvrgSn=\d+[^"]*)"/);
     const href = linkMatch ? linkMatch[1] : "";
-    const link = href.startsWith("http")
-      ? href
-      : href
-      ? "https://www.sciencetimes.co.kr" + href
+    const link = href
+      ? href.startsWith("http") ? href : "https://www.sciencetimes.co.kr" + href
       : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
 
-    // 이미지 — 같은 <li> 블록 안에서만 추출
+    // 이미지 — 현재 sub_txt ~ 다음 sub_txt 사이에서만 탐색
     const imgMatch = block.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
     const imageUrl = imgMatch
       ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
       : null;
 
-    // 날짜
-    const dateMatch = block.match(/(\d{4}-\d{2}-\d{2})/);
-    const date = dateMatch ? dateMatch[1] : "";
+    // 날짜 — 현재 블록 앞쪽 500자에서 추출
+    const before = html.slice(Math.max(0, start - 500), start);
+    const dateMatches = before.match(/(\d{4}-\d{2}-\d{2})/g);
+    const date = dateMatches ? dateMatches[dateMatches.length - 1] : "";
 
-    items.push({ title, summary, imageUrl, link, date, series: "기획·칼럼" });
+    items.push({ title, summary, imageUrl, link, date });
   }
 
   const data = items.length > 0 ? items : [{
@@ -86,7 +87,6 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     imageUrl: null,
     link: "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y",
     date: "",
-    series: "기획·칼럼",
   }];
 
   scienceNewsCache = { data, fetchedAt: now };
@@ -105,13 +105,9 @@ export async function registerRoutes(
 
   app.get(api.posts.get.path, async (req, res) => {
     const id = parseInt(req.params.id);
-    if (isNaN(id)) {
-      return res.status(404).json({ message: "Invalid ID" });
-    }
+    if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
     const post = await storage.getPost(id);
-    if (!post) {
-      return res.status(404).json({ message: "Post not found" });
-    }
+    if (!post) return res.status(404).json({ message: "Post not found" });
     res.json(post);
   });
 
@@ -137,9 +133,7 @@ export async function registerRoutes(
   };
 
   app.post("/api/admin/verify", (req, res) => {
-    if (checkAdminPassword(req, res)) {
-      res.json({ ok: true });
-    }
+    if (checkAdminPassword(req, res)) res.json({ ok: true });
   });
 
   app.post(api.posts.create.path, async (req, res) => {
@@ -150,10 +144,7 @@ export async function registerRoutes(
       res.status(201).json(post);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({
-          message: err.errors[0].message,
-          field: err.errors[0].path.join("."),
-        });
+        return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
       }
       throw err;
     }
@@ -170,10 +161,7 @@ export async function registerRoutes(
       res.json(post);
     } catch (err) {
       if (err instanceof z.ZodError) {
-        return res.status(400).json({
-          message: err.errors[0].message,
-          field: err.errors[0].path.join("."),
-        });
+        return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
       }
       throw err;
     }
@@ -192,21 +180,9 @@ export async function registerRoutes(
   try {
     const existingPosts = await storage.getPosts();
     if (existingPosts.length === 0) {
-      await storage.createPost({
-        title: "미사강변고등학교 과학중점고 선정 안내",
-        content: "우리 학교가 과학중점고등학교로 선정되었습니다. 앞으로 다양한 과학, 수학 심화 교육과정과 체험 활동이 진행될 예정입니다.",
-        category: "home",
-      });
-      await storage.createPost({
-        title: "물리/화학/생명과학/지구과학 실험실 소개",
-        content: "최신식 기자재를 갖춘 4개의 전용 과학 실험실과 리소스룸을 운영하고 있습니다. 학생들의 자유로운 탐구 활동을 지원합니다.",
-        category: "lab_intro",
-      });
-      await storage.createPost({
-        title: "2024학년도 과학중점반 탐구 프로젝트",
-        content: "학생들이 주도적으로 연구 주제를 선정하고 1년간 탐구하는 장기 프로젝트 활동입니다.",
-        category: "science_class",
-      });
+      await storage.createPost({ title: "미사강변고등학교 과학중점고 선정 안내", content: "우리 학교가 과학중점고등학교로 선정되었습니다.", category: "home" });
+      await storage.createPost({ title: "물리/화학/생명과학/지구과학 실험실 소개", content: "최신식 기자재를 갖춘 4개의 전용 과학 실험실과 리소스룸을 운영하고 있습니다.", category: "lab_intro" });
+      await storage.createPost({ title: "2024학년도 과학중점반 탐구 프로젝트", content: "학생들이 주도적으로 연구 주제를 선정하고 1년간 탐구하는 장기 프로젝트 활동입니다.", category: "science_class" });
     }
   } catch (error) {
     console.error("Failed to seed database:", error);
