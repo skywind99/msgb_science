@@ -1,11 +1,11 @@
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, FlaskConical, Users, Globe, ExternalLink } from "lucide-react";
+import { ArrowRight, BookOpen, FlaskConical, Users, Globe, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { usePosts } from "@/hooks/use-posts";
 import { PostCard, PostCardSkeleton } from "@/components/PostCard";
 import { CreatePostDialog } from "@/components/CreatePostDialog";
 import { useAdmin } from "@/contexts/admin";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 const FEATURES = [
   {
@@ -48,39 +48,176 @@ interface ScienceNewsItem {
 }
 
 function useScienceNews() {
-  const [news, setNews] = useState<ScienceNewsItem | null>(null);
+  const [newsList, setNewsList] = useState<ScienceNewsItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/science-news")
       .then((r) => r.json())
-      .then((data) => {
-        setNews(data);
+      .then((data: ScienceNewsItem[]) => {
+        setNewsList(Array.isArray(data) ? data : [data]);
         setLoading(false);
       })
       .catch(() => setLoading(false));
   }, []);
 
-  return { news, loading };
+  return { newsList, loading };
+}
+
+// 슬라이더 컴포넌트
+function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
+  const [index, setIndex] = useState(0);
+  const [direction, setDirection] = useState(1);
+
+  const prev = useCallback(() => {
+    setDirection(-1);
+    setIndex((i) => (i - 1 + newsList.length) % newsList.length);
+  }, [newsList.length]);
+
+  const next = useCallback(() => {
+    setDirection(1);
+    setIndex((i) => (i + 1) % newsList.length);
+  }, [newsList.length]);
+
+  // 5초마다 자동 슬라이드
+  useEffect(() => {
+    if (newsList.length <= 1) return;
+    const timer = setInterval(() => {
+      setDirection(1);
+      setIndex((i) => (i + 1) % newsList.length);
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [newsList.length]);
+
+  const news = newsList[index];
+
+  const variants = {
+    enter: (d: number) => ({ x: d > 0 ? 60 : -60, opacity: 0 }),
+    center: { x: 0, opacity: 1 },
+    exit: (d: number) => ({ x: d > 0 ? -60 : 60, opacity: 0 }),
+  };
+
+  return (
+    <div className="relative w-full lg:w-[340px] shrink-0">
+      {/* 카드 */}
+      <div className="relative overflow-hidden rounded-2xl border border-border shadow-md bg-white">
+        <AnimatePresence custom={direction} mode="wait">
+          <motion.a
+            key={index}
+            custom={direction}
+            variants={variants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: 0.3, ease: "easeInOut" }}
+            href={news.link}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block group"
+          >
+            {/* 썸네일 */}
+            <div className="relative h-48 w-full overflow-hidden bg-gradient-to-br from-primary/5 to-blue-50">
+              {news.imageUrl ? (
+                <img
+                  src={news.imageUrl}
+                  alt={news.title}
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-5xl">
+                  🔭
+                </div>
+              )}
+              {/* 출처 뱃지 */}
+              <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">
+                사이언스타임즈
+              </div>
+              {/* 인디케이터 */}
+              {newsList.length > 1 && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+                  {newsList.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setDirection(i > index ? 1 : -1);
+                        setIndex(i);
+                      }}
+                      className={`w-1.5 h-1.5 rounded-full transition-all ${
+                        i === index ? "bg-white w-4" : "bg-white/50"
+                      }`}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 본문 */}
+            <div className="p-5">
+              <p className="text-xs font-semibold text-primary mb-2">
+                {news.series}
+              </p>
+              <h3 className="text-base font-bold text-foreground leading-snug mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                {news.title}
+              </h3>
+              {news.summary && (
+                <p className="text-sm text-muted-foreground leading-relaxed line-clamp-2 mb-4">
+                  {news.summary}
+                </p>
+              )}
+              <div className="flex items-center justify-between pt-3 border-t border-border">
+                <span className="text-xs text-muted-foreground">{news.date}</span>
+                <span className="text-xs font-bold text-primary flex items-center gap-1">
+                  기사 읽기 <ExternalLink className="w-3 h-3" />
+                </span>
+              </div>
+            </div>
+          </motion.a>
+        </AnimatePresence>
+      </div>
+
+      {/* 화살표 버튼 — 카드 안쪽 양 옆 */}
+      {newsList.length > 1 && (
+        <>
+          <button
+            onClick={prev}
+            className="absolute left-2 top-24 -translate-y-1/2 z-10 bg-white/80 hover:bg-white border border-border rounded-full w-8 h-8 flex items-center justify-center shadow-sm hover:shadow-md transition-all"
+            aria-label="이전 기사"
+          >
+            <ChevronLeft className="w-4 h-4 text-foreground" />
+          </button>
+          <button
+            onClick={next}
+            className="absolute right-2 top-24 -translate-y-1/2 z-10 bg-white/80 hover:bg-white border border-border rounded-full w-8 h-8 flex items-center justify-center shadow-sm hover:shadow-md transition-all"
+            aria-label="다음 기사"
+          >
+            <ChevronRight className="w-4 h-4 text-foreground" />
+          </button>
+        </>
+      )}
+    </div>
+  );
 }
 
 export default function Home() {
   const { data: posts, isLoading } = usePosts("home");
   const { isAdmin } = useAdmin();
-  const { news, loading: newsLoading } = useScienceNews();
+  const { newsList, loading: newsLoading } = useScienceNews();
 
   return (
     <div className="min-h-screen pb-20">
       {/* Hero Section */}
       <section className="relative pt-24 pb-32 lg:pt-36 lg:pb-40 overflow-hidden">
-        {/* Background gradient & pattern */}
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-blue-50/50 -z-10" />
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay -z-10" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
           <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
 
-            {/* 왼쪽: 기존 히어로 텍스트 */}
+            {/* 왼쪽: 히어로 텍스트 */}
             <motion.div
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
@@ -124,7 +261,7 @@ export default function Home() {
               </div>
             </motion.div>
 
-            {/* 오른쪽: 사이언스타임즈 최신 기사 카드 */}
+            {/* 오른쪽: 슬라이딩 뉴스 카드 */}
             <motion.div
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
@@ -132,7 +269,6 @@ export default function Home() {
               className="w-full lg:w-[340px] shrink-0"
             >
               {newsLoading ? (
-                /* 스켈레톤 */
                 <div className="bg-white rounded-2xl border border-border shadow-md overflow-hidden animate-pulse">
                   <div className="h-48 bg-muted" />
                   <div className="p-5 space-y-3">
@@ -143,61 +279,8 @@ export default function Home() {
                     <div className="h-3 w-3/4 bg-muted rounded" />
                   </div>
                 </div>
-              ) : news ? (
-                /* 기사 카드 */
-                <a
-                  href={news.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block bg-white rounded-2xl border border-border shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group"
-                >
-                  {/* 썸네일 */}
-                  <div className="relative h-48 w-full overflow-hidden bg-gradient-to-br from-primary/5 to-blue-50">
-                    {news.imageUrl ? (
-                      <img
-                        src={news.imageUrl}
-                        alt={news.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = "none";
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-5xl">
-                        🔭
-                      </div>
-                    )}
-                    {/* 출처 뱃지 */}
-                    <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">
-                      최신 과학 기사
-                    </div>
-                  </div>
-
-                  {/* 본문 */}
-                  <div className="p-5">
-                    {news.series && (
-                      <p className="text-xs font-semibold text-primary mb-2 truncate">
-                        {news.series}
-                      </p>
-                    )}
-                    <h3 className="text-base font-bold text-foreground leading-snug mb-2 line-clamp-2 group-hover:text-primary transition-colors">
-                      {news.title}
-                    </h3>
-                    {news.summary && (
-                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-4">
-                        {news.summary}
-                      </p>
-                    )}
-                    <div className="flex items-center justify-between pt-3 border-t border-border">
-                      <span className="text-xs text-muted-foreground">
-                        {news.date}
-                      </span>
-                      <span className="text-xs font-bold text-primary flex items-center gap-1">
-                        기사 읽기 <ExternalLink className="w-3 h-3" />
-                      </span>
-                    </div>
-                  </div>
-                </a>
+              ) : newsList.length > 0 ? (
+                <NewsSlider newsList={newsList} />
               ) : null}
             </motion.div>
 
