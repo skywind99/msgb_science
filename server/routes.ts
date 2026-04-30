@@ -6,10 +6,6 @@ import { z } from "zod";
 
 declare const process: { env: Record<string, string | undefined> };
 
-// 사이언스타임즈 기사 캐시 (1시간)
-let scienceNewsCache: { data: ScienceNewsItem; fetchedAt: number } | null = null;
-const CACHE_TTL = 60 * 60 * 1000;
-
 interface ScienceNewsItem {
   title: string;
   summary: string;
@@ -19,7 +15,11 @@ interface ScienceNewsItem {
   series: string;
 }
 
-async function fetchScienceNews(): Promise<ScienceNewsItem> {
+// 캐시 (1시간)
+let scienceNewsCache: { data: ScienceNewsItem[]; fetchedAt: number } | null = null;
+const CACHE_TTL = 60 * 60 * 1000;
+
+async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
   const now = Date.now();
   if (scienceNewsCache && now - scienceNewsCache.fetchedAt < CACHE_TTL) {
     return scienceNewsCache.data;
@@ -31,45 +31,61 @@ async function fetchScienceNews(): Promise<ScienceNewsItem> {
   );
   const html = await res.text();
 
-  // 첫 번째 기사 파싱
-  const articleMatch = html.match(
-    /class="sel_left"[\s\S]*?<article[\s\S]*?<\/article>/
-  );
-  const block = articleMatch ? articleMatch[0] : html;
+  const items: ScienceNewsItem[] = [];
+  const subTxtRegex = /class="sub_txt"([\s\S]*?)(?=class="sub_txt"|<\/ul>)/g;
+  let m: RegExpExecArray | null;
 
-  // 시리즈명 — <dt> 안 텍스트
-  const seriesMatch = block.match(/<dt[^>]*>([\s\S]*?)<\/dt>/);
-  const series = "기획·칼럼";
-  
-  // 제목 — sub_txt 안의 <b> 태그
-  const titleMatch = block.match(/class="sub_txt"[\s\S]*?<b>([\s\S]*?)<\/b>/);
-  const title = titleMatch
-    ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
-    : "사이언스타임즈 최신 기사";
+  while ((m = subTxtRegex.exec(html)) !== null && items.length < 5) {
+    const block = m[1];
 
-  // 요약 — sub_txt 안의 <span> 태그
-  const summaryMatch = block.match(/class="sub_txt"[\s\S]*?<span>([\s\S]*?)<\/span>/);
-  let summary = "";
-  if (summaryMatch) {
-    const raw = summaryMatch[1].replace(/<[^>]+>/g, "").trim();
-    summary = raw.length > 120 ? raw.slice(0, 120) + "…" : raw;
+    // 제목
+    const titleMatch = block.match(/<b>([\s\S]*?)<\/b>/);
+    const title = titleMatch
+      ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
+      : "";
+    if (!title) continue;
+
+    // 요약
+    const summaryMatch = block.match(/<span>([\s\S]*?)<\/span>/);
+    let summary = "";
+    if (summaryMatch) {
+      const raw = summaryMatch[1].replace(/<[^>]+>/g, "").trim();
+      summary = raw.length > 120 ? raw.slice(0, 120) + "…" : raw;
+    }
+
+    // 링크
+    const linkMatch = block.match(/href="([^"]*nscvrgSn=\d+[^"]*)"/);
+    const href = linkMatch ? linkMatch[1] : "";
+    const link = href.startsWith("http")
+      ? href
+      : href
+      ? "https://www.sciencetimes.co.kr" + href
+      : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
+
+    // 이미지
+    const afterBlock = html.slice(m.index, m.index + 800);
+    const imgMatch = afterBlock.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
+    const imageUrl = imgMatch
+      ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
+      : null;
+
+    // 날짜
+    const beforeBlock = html.slice(Math.max(0, m.index - 400), m.index);
+    const dateMatches = beforeBlock.match(/(\d{4}-\d{2}-\d{2})/g);
+    const date = dateMatches ? dateMatches[dateMatches.length - 1] : "";
+
+    items.push({ title, summary, imageUrl, link, date, series: "기획·칼럼" });
   }
 
-  // 이미지
-  const imgMatch = block.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
-  const imageUrl = imgMatch
-    ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
-    : null;
+  const data = items.length > 0 ? items : [{
+    title: "사이언스타임즈 최신 기사",
+    summary: "",
+    imageUrl: null,
+    link: "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y",
+    date: "",
+    series: "기획·칼럼",
+  }];
 
-  // 링크
-  const linkMatch = block.match(/href="(https:\/\/www\.sciencetimes\.co\.kr\/nscvrg\/view\/[^"]+)"/);
-  const link = linkMatch ? linkMatch[1] : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
-
-  // 날짜
-  const dateMatch = block.match(/(\d{4}-\d{2}-\d{2})/);
-  const date = dateMatch ? dateMatch[1] : "";
-
-  const data: ScienceNewsItem = { title, summary, imageUrl, link, date, series };
   scienceNewsCache = { data, fetchedAt: now };
   return data;
 }
@@ -96,7 +112,7 @@ export async function registerRoutes(
     res.json(post);
   });
 
-  // ── 사이언스타임즈 최신 기사 ──────────────────────────
+  // ── 사이언스타임즈 최신 기사 목록 ────────────────────────
   app.get("/api/science-news", async (_req, res) => {
     try {
       const news = await fetchScienceNews();
