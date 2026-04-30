@@ -1,10 +1,11 @@
 import { motion } from "framer-motion";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, FlaskConical, Users, Globe } from "lucide-react";
+import { ArrowRight, BookOpen, FlaskConical, Users, Globe, ExternalLink } from "lucide-react";
 import { usePosts } from "@/hooks/use-posts";
 import { PostCard, PostCardSkeleton } from "@/components/PostCard";
 import { CreatePostDialog } from "@/components/CreatePostDialog";
 import { useAdmin } from "@/contexts/admin";
+import { useEffect, useState } from "react";
 
 const FEATURES = [
   {
@@ -37,9 +38,36 @@ const FEATURES = [
   },
 ];
 
+interface ScienceNewsItem {
+  title: string;
+  summary: string;
+  imageUrl: string | null;
+  link: string;
+  date: string;
+  series: string;
+}
+
+function useScienceNews() {
+  const [news, setNews] = useState<ScienceNewsItem | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/science-news")
+      .then((r) => r.json())
+      .then((data) => {
+        setNews(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  return { news, loading };
+}
+
 export default function Home() {
   const { data: posts, isLoading } = usePosts("home");
   const { isAdmin } = useAdmin();
+  const { news, loading: newsLoading } = useScienceNews();
 
   return (
     <div className="min-h-screen pb-20">
@@ -49,61 +77,131 @@ export default function Home() {
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-blue-50/50 -z-10" />
         <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03] mix-blend-overlay -z-10" />
 
-        {/* landing page hero scenic laboratory */}
-        <div className="absolute right-0 top-0 w-1/2 h-full opacity-10 pointer-events-none hidden lg:block -z-10">
-          <img
-            src="https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=1200&q=80"
-            alt="Science Lab"
-            className="w-full h-full object-cover mask-image-gradient"
-            style={{
-              maskImage: "linear-gradient(to left, black, transparent)",
-            }}
-          />
-        </div>
-
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative">
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: "easeOut" }}
-            className="max-w-3xl"
-          >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary font-bold text-sm mb-6 border border-primary/20">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-              </span>
-              2026학년도 과학중점학교 지정
-            </div>
+          <div className="flex flex-col lg:flex-row items-center gap-12 lg:gap-16">
 
-            <h1 className="text-5xl lg:text-7xl font-black text-foreground tracking-tight leading-[1.1] mb-6">
-              미래를 선도하는 <br />
-              <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">
-                창의융합 인재 육성
-              </span>
-            </h1>
+            {/* 왼쪽: 기존 히어로 텍스트 */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="flex-1"
+            >
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 text-primary font-bold text-sm mb-6 border border-primary/20">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
+                </span>
+                2026학년도 과학중점학교 지정
+              </div>
 
-            <p className="text-xl text-muted-foreground leading-relaxed mb-10 max-w-2xl">
-              미사강변고등학교 과학중점과정은 깊이 있는 탐구와 실험 중심의
-              교육으로 4차 산업혁명 시대를 이끌어갈 글로벌 리더를 키웁니다.
-            </p>
+              <h1 className="text-5xl lg:text-7xl font-black text-foreground tracking-tight leading-[1.1] mb-6">
+                미래를 선도하는 <br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary to-blue-400">
+                  창의융합 인재 육성
+                </span>
+              </h1>
 
-            <div className="flex flex-wrap items-center gap-4">
-              <Link
-                href="/lab"
-                className="px-8 py-4 rounded-xl font-bold bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
-              >
-                과학실 둘러보기
-                <ArrowRight className="w-5 h-5" />
-              </Link>
-              <Link
-                href="/class"
-                className="px-8 py-4 rounded-xl font-bold bg-white text-foreground border-2 border-border shadow-sm hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-1 transition-all duration-300"
-              >
-                교육과정 안내
-              </Link>
-            </div>
-          </motion.div>
+              <p className="text-xl text-muted-foreground leading-relaxed mb-10 max-w-2xl">
+                미사강변고등학교 과학중점과정은 깊이 있는 탐구와 실험 중심의
+                교육으로 4차 산업혁명 시대를 이끌어갈 글로벌 리더를 키웁니다.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-4">
+                <Link
+                  href="/lab"
+                  className="px-8 py-4 rounded-xl font-bold bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                >
+                  과학실 둘러보기
+                  <ArrowRight className="w-5 h-5" />
+                </Link>
+                <Link
+                  href="/class"
+                  className="px-8 py-4 rounded-xl font-bold bg-white text-foreground border-2 border-border shadow-sm hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-1 transition-all duration-300"
+                >
+                  교육과정 안내
+                </Link>
+              </div>
+            </motion.div>
+
+            {/* 오른쪽: 사이언스타임즈 최신 기사 카드 */}
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.6, delay: 0.2, ease: "easeOut" }}
+              className="w-full lg:w-[340px] shrink-0"
+            >
+              {newsLoading ? (
+                /* 스켈레톤 */
+                <div className="bg-white rounded-2xl border border-border shadow-md overflow-hidden animate-pulse">
+                  <div className="h-48 bg-muted" />
+                  <div className="p-5 space-y-3">
+                    <div className="h-3 w-24 bg-muted rounded" />
+                    <div className="h-5 bg-muted rounded" />
+                    <div className="h-5 w-4/5 bg-muted rounded" />
+                    <div className="h-3 bg-muted rounded" />
+                    <div className="h-3 w-3/4 bg-muted rounded" />
+                  </div>
+                </div>
+              ) : news ? (
+                /* 기사 카드 */
+                <a
+                  href={news.link}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block bg-white rounded-2xl border border-border shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-300 overflow-hidden group"
+                >
+                  {/* 썸네일 */}
+                  <div className="relative h-48 w-full overflow-hidden bg-gradient-to-br from-primary/5 to-blue-50">
+                    {news.imageUrl ? (
+                      <img
+                        src={news.imageUrl}
+                        alt={news.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-5xl">
+                        🔭
+                      </div>
+                    )}
+                    {/* 출처 뱃지 */}
+                    <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">
+                      사이언스타임즈
+                    </div>
+                  </div>
+
+                  {/* 본문 */}
+                  <div className="p-5">
+                    {news.series && (
+                      <p className="text-xs font-semibold text-primary mb-2 truncate">
+                        {news.series}
+                      </p>
+                    )}
+                    <h3 className="text-base font-bold text-foreground leading-snug mb-2 line-clamp-2 group-hover:text-primary transition-colors">
+                      {news.title}
+                    </h3>
+                    {news.summary && (
+                      <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 mb-4">
+                        {news.summary}
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between pt-3 border-t border-border">
+                      <span className="text-xs text-muted-foreground">
+                        {news.date}
+                      </span>
+                      <span className="text-xs font-bold text-primary flex items-center gap-1">
+                        기사 읽기 <ExternalLink className="w-3 h-3" />
+                      </span>
+                    </div>
+                  </div>
+                </a>
+              ) : null}
+            </motion.div>
+
+          </div>
         </div>
       </section>
 
