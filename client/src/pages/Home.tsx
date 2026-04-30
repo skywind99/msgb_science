@@ -169,7 +169,7 @@ export default function Home() {
                     )}
                     {/* 출처 뱃지 */}
                     <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1 rounded-full">
-                      사이언스타임즈
+                      최신 과학 기사
                     </div>
                   </div>
 
