@@ -37,27 +37,24 @@ async function fetchScienceNews(): Promise<ScienceNewsItem> {
   );
   const block = articleMatch ? articleMatch[0] : html;
 
-  // 시리즈명
-  const seriesMatch = block.match(/class="[^"]*series[^"]*"[^>]*>([^<]+)<\/a>/i)
-    || block.match(/<dt[^>]*>([\uAC00-\uD7A3\w\s·\-]+)<\/dt>/u);
-  const series = seriesMatch ? seriesMatch[1].trim() : "기획·칼럼";
+  // 시리즈명 — <dt> 안 텍스트
+  const seriesMatch = block.match(/<dt[^>]*>([\s\S]*?)<\/dt>/);
+  const series = seriesMatch
+    ? seriesMatch[1].replace(/<[^>]+>/g, "").trim()
+    : "기획·칼럼";
 
-  // 제목
-  const titleMatch = block.match(/<strong[^>]*>([\s\S]*?)<\/strong>/);
+  // 제목 — sub_txt 안의 <b> 태그
+  const titleMatch = block.match(/class="sub_txt"[\s\S]*?<b>([\s\S]*?)<\/b>/);
   const title = titleMatch
     ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
     : "사이언스타임즈 최신 기사";
 
-  // 요약
-  const summaryMatch = block.match(
-    /nscvrgSn=\d+"[^>]*>([\s\S]*?)<\/a>/
-  );
+  // 요약 — sub_txt 안의 <span> 태그
+  const summaryMatch = block.match(/class="sub_txt"[\s\S]*?<span>([\s\S]*?)<\/span>/);
   let summary = "";
   if (summaryMatch) {
-    const raw = summaryMatch[1].replace(/<[^>]+>/g, " ").trim();
-    const lines = raw.split(/\n/).map((l: string) => l.trim()).filter(Boolean);
-    summary = lines.slice(-1)[0] || lines[0] || "";
-    if (summary.length > 120) summary = summary.slice(0, 120) + "…";
+    const raw = summaryMatch[1].replace(/<[^>]+>/g, "").trim();
+    summary = raw.length > 120 ? raw.slice(0, 120) + "…" : raw;
   }
 
   // 이미지
