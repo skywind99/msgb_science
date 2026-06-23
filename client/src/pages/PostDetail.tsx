@@ -3,10 +3,10 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Post, type ContentBlock } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube, Bell } from "lucide-react";
+import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube, Bell, Upload, Loader2 } from "lucide-react";
 import { YoutubeEmbed, isYoutubeUrl } from "@/components/YoutubeEmbed";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -52,12 +52,72 @@ const CATEGORY_ROUTES: Record<string, string> = {
   local_community: "/community",
 };
 
+// 수정 다이얼로그용 이미지 입력 (파일업로드 + URL)
+function BlockImageInput({
+  value, onChange, adminPassword,
+}: { value: string; onChange: (url: string) => void; adminPassword: string }) {
+  const [mode, setMode] = useState<"file" | "url">("file");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleFile = async (file: File) => {
+    setUploading(true);
+    try {
+      const res = await fetch("/api/upload-image", {
+        method: "POST",
+        headers: { "Content-Type": file.type, "x-admin-password": adminPassword },
+        body: file,
+      });
+      if (res.ok) {
+        const data = await res.json() as { url?: string };
+        if (data.url) { onChange(data.url); toast({ title: "이미지 업로드 완료" }); }
+      } else {
+        toast({ title: "업로드 실패", variant: "destructive" });
+      }
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
+        {(["file", "url"] as const).map((m) => (
+          <button key={m} type="button" onClick={() => setMode(m)}
+            className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${mode === m ? "bg-background shadow text-foreground" : "text-muted-foreground"}`}>
+            {m === "file" ? <><Upload className="w-3 h-3" /> 파일</> : <><ImageIcon className="w-3 h-3" /> URL</>}
+          </button>
+        ))}
+      </div>
+      {mode === "file" ? (
+        <label className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg border-2 border-dashed cursor-pointer transition-all ${uploading ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary hover:bg-primary/5"}`}>
+          {uploading ? <Loader2 className="w-4 h-4 text-primary animate-spin" /> : <Upload className="w-4 h-4 text-muted-foreground" />}
+          <span className="text-xs text-muted-foreground">{uploading ? "업로드 중..." : "클릭하여 이미지 선택"}</span>
+          <input ref={fileRef} type="file" accept="image/*" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} disabled={uploading} />
+        </label>
+      ) : (
+        <Input value={value} onChange={(e) => onChange(e.target.value)}
+          placeholder="https://example.com/image.jpg" className="text-sm" />
+      )}
+      {value && /^https?:\/\//.test(value) && (
+        <img src={value} alt="" className="w-full h-28 object-cover rounded-lg border border-border"
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+      )}
+    </div>
+  );
+}
+
 function BlockEditor({
   blocks,
   onChange,
+  adminPassword,
 }: {
   blocks: ContentBlock[];
   onChange: (blocks: ContentBlock[]) => void;
+  adminPassword: string;
 }) {
   const addBlock = () => onChange([...blocks, { imageUrl: "", content: "" }]);
   const removeBlock = (idx: number) => onChange(blocks.filter((_, i) => i !== idx));
@@ -81,25 +141,11 @@ function BlockEditor({
               </button>
             )}
           </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
-              <ImageIcon className="w-3 h-3 text-primary" /> 🖼️ 이미지 URL 붙여넣기
-            </div>
-            <Input
-              value={block.imageUrl ?? ""}
-              onChange={(e) => updateBlock(idx, "imageUrl", e.target.value)}
-              placeholder="학교 홈페이지 이미지 주소를 붙여넣으세요"
-              className="text-sm"
-            />
-            {block.imageUrl && /^https?:\/\//.test(block.imageUrl) && (
-              <img
-                src={block.imageUrl}
-                alt=""
-                className="w-full h-28 object-cover rounded-lg border border-border"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-            )}
-          </div>
+          <BlockImageInput
+            value={block.imageUrl ?? ""}
+            onChange={(url) => updateBlock(idx, "imageUrl", url)}
+            adminPassword={adminPassword}
+          />
           <div className="space-y-1.5">
             <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
               <Youtube className="w-3 h-3 text-red-500" /> 🎬 유튜브 URL
@@ -409,27 +455,14 @@ export default function PostDetail() {
             </div>
             <div className="space-y-2">
               <Label>
-                대표 이미지 URL
+                대표 이미지
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">(목록 썸네일)</span>
               </Label>
-              <Input
-                value={editImageUrl}
-                onChange={(e) => setEditImageUrl(e.target.value)}
-                placeholder="https://example.com/thumbnail.jpg"
-                data-testid="input-edit-image-url"
-              />
-              {editImageUrl && (
-                <img
-                  src={editImageUrl}
-                  alt=""
-                  className="w-full h-32 object-cover rounded-lg border border-border"
-                  onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                />
-              )}
+              <BlockImageInput value={editImageUrl} onChange={setEditImageUrl} adminPassword={password} />
             </div>
             <div className="space-y-2">
               <Label>본문 블록</Label>
-              <BlockEditor blocks={editBlocks} onChange={setEditBlocks} />
+              <BlockEditor blocks={editBlocks} onChange={setEditBlocks} adminPassword={password} />
             </div>
           </div>
           <DialogFooter>
