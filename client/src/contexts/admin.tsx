@@ -46,3 +46,4 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useAdmin = () => useContext(AdminContext);
+export const useAdminPassword = () => useContext(AdminContext).password;
