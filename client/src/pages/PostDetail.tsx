@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Post, type ContentBlock } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube } from "lucide-react";
+import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube, Bell } from "lucide-react";
 import { YoutubeEmbed, isYoutubeUrl } from "@/components/YoutubeEmbed";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -143,6 +143,7 @@ export default function PostDetail() {
   const { isAdmin, password } = useAdmin();
 
   const [editOpen, setEditOpen] = useState(false);
+  const [popupRegistering, setPopupRegistering] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
@@ -196,6 +197,36 @@ export default function PostDetail() {
       toast({ title: "오류", description: err.message, variant: "destructive" });
     },
   });
+
+
+  const registerAsPopup = async () => {
+    if (!post) return;
+    setPopupRegistering(true);
+    try {
+      const body = {
+        title: post.title,
+        content: post.content?.slice(0, 200) || "",
+        imageUrl: post.imageUrl || null,
+        linkUrl: `${window.location.origin}/posts/${post.id}`,
+        linkLabel: "게시물 보기",
+        active: true,
+      };
+      const res = await fetch("/api/admin/popups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        body: JSON.stringify(body),
+      });
+      if (res.ok) {
+        toast({ title: "팝업으로 등록되었습니다.", description: "팝업 관리에서 확인하세요." });
+      } else {
+        toast({ title: "팝업 등록에 실패했습니다.", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "오류가 발생했습니다.", variant: "destructive" });
+    } finally {
+      setPopupRegistering(false);
+    }
+  };
 
   const openEdit = () => {
     if (!post) return;
@@ -283,6 +314,9 @@ export default function PostDetail() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onClick={openEdit}>
                     <Pencil className="w-4 h-4 mr-2" /> 수정
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={registerAsPopup} disabled={popupRegistering}>
+                    <Bell className="w-4 h-4 mr-2" /> {popupRegistering ? "등록 중..." : "팝업으로 등록"}
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-destructive focus:text-destructive"
