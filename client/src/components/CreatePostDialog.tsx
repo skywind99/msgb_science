@@ -246,6 +246,20 @@ function BlockEditor({
 
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+              <Youtube className="w-3.5 h-3.5 text-red-500" />
+              🎬 유튜브 URL
+            </div>
+            <input
+              type="text"
+              value={(block as any).youtubeUrl ?? ""}
+              onChange={(e) => updateBlock(idx, "youtubeUrl" as keyof ContentBlock, e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
+              className="w-full px-3 py-2 text-sm rounded-lg border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <AlignLeft className="w-3.5 h-3.5 text-primary" />
               📝 텍스트 내용
             </div>
