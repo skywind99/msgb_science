@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAdmin } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
+import { PopupManager } from "@/components/PopupManager";
 
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
@@ -166,6 +167,7 @@ export function Navigation() {
               {isAdmin ? (
                 <>
                   <StorageBadge adminPassword={password} />
+                  <PopupManager />
                   <button
                     onClick={logout}
                     className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
