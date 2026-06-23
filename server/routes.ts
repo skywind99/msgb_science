@@ -265,6 +265,59 @@ export async function registerRoutes(
     res.status(204).end();
   });
 
+
+  // ── 팝업 CRUD ────────────────────────────────────────────
+  app.get("/api/popups", async (_req, res) => {
+    try {
+      const list = await storage.getActivePopups();
+      res.json(list);
+    } catch (err) {
+      res.status(500).json({ message: "팝업을 불러올 수 없습니다." });
+    }
+  });
+
+  app.get("/api/admin/popups", async (req, res) => {
+    if (!checkAdminPassword(req, res)) return;
+    try {
+      const list = await storage.getPopups();
+      res.json(list);
+    } catch (err) {
+      res.status(500).json({ message: "팝업을 불러올 수 없습니다." });
+    }
+  });
+
+  app.post("/api/admin/popups", async (req, res) => {
+    if (!checkAdminPassword(req, res)) return;
+    try {
+      const popup = await storage.createPopup(req.body);
+      res.status(201).json(popup);
+    } catch (err) {
+      res.status(500).json({ message: "팝업 생성에 실패했습니다." });
+    }
+  });
+
+  app.patch("/api/admin/popups/:id", async (req, res) => {
+    if (!checkAdminPassword(req, res)) return;
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    try {
+      const popup = await storage.updatePopup(id, req.body);
+      if (!popup) return res.status(404).json({ message: "팝업을 찾을 수 없습니다." });
+      res.json(popup);
+    } catch (err) {
+      res.status(500).json({ message: "팝업 수정에 실패했습니다." });
+    }
+  });
+
+  app.delete("/api/admin/popups/:id", async (req, res) => {
+    if (!checkAdminPassword(req, res)) return;
+    const id = parseInt(req.params.id);
+    if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
+    const ok = await storage.deletePopup(id);
+    if (!ok) return res.status(404).json({ message: "팝업을 찾을 수 없습니다." });
+    res.status(204).end();
+  });
+
   // Seed data
   try {
     const existingPosts = await storage.getPosts();
