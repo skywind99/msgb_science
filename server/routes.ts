@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
 import { z } from "zod";
+import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -32,7 +33,6 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
 
   const items: ScienceNewsItem[] = [];
 
-  // sub_txt 위치 전부 찾기
   const positions: number[] = [];
   let pos = 0;
   while ((pos = html.indexOf('class="sub_txt"', pos)) !== -1) {
@@ -45,14 +45,12 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     const end = i + 1 < positions.length ? positions[i + 1] : start + 2000;
     const block = html.slice(start, end);
 
-    // 제목
     const titleMatch = block.match(/<b>([\s\S]*?)<\/b>/);
     const title = titleMatch
       ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
       : "";
     if (!title) continue;
 
-    // 요약
     const summaryMatch = block.match(/<span>([\s\S]*?)<\/span>/);
     let summary = "";
     if (summaryMatch) {
@@ -60,20 +58,22 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
       summary = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
     }
 
-    // 링크
     const linkMatch = block.match(/href="([^"]*nscvrgSn=\d+[^"]*)"/);
     const href = linkMatch ? linkMatch[1] : "";
     const link = href
       ? href.startsWith("http") ? href : "https://www.sciencetimes.co.kr" + href
       : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
 
-    // 이미지 — 현재 sub_txt ~ 다음 sub_txt 사이에서만 탐색
     const imgMatch = block.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
-    const imageUrl = imgMatch
+    let imageUrl: string | null = imgMatch
       ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
       : null;
 
-    // 날짜 — 현재 블록 앞쪽 500자에서 추출
+    // 이미지가 있으면 Supabase Storage에 미러링
+    if (imageUrl) {
+      imageUrl = await mirrorImageToStorage(imageUrl);
+    }
+
     const before = html.slice(Math.max(0, start - 500), start);
     const dateMatches = before.match(/(\d{4}-\d{2}-\d{2})/g);
     const date = dateMatches ? dateMatches[dateMatches.length - 1] : "";
@@ -119,6 +119,99 @@ export async function registerRoutes(
     } catch (err) {
       console.error("science-news fetch error:", err);
       res.status(500).json({ message: "기사를 불러올 수 없습니다." });
+    }
+  });
+
+  // ── 이미지 업로드 ────────────────────────────────────────
+  // 1) 클라이언트에서 파일 직접 업로드 (multipart/form-data)
+  app.post("/api/upload-image", async (req, res) => {
+    const checkAdmin = (): boolean => {
+      const adminPassword = process.env.ADMIN_PASSWORD;
+      const provided = req.headers["x-admin-password"] as string | undefined;
+      if (!adminPassword || provided !== adminPassword) {
+        res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
+        return false;
+      }
+      return true;
+    };
+    if (!checkAdmin()) return;
+
+    try {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      await new Promise<void>((resolve, reject) => {
+        req.on("end", resolve);
+        req.on("error", reject);
+      });
+      const body = Buffer.concat(chunks);
+
+      // Content-Type: multipart/form-data 파싱 (간단 버전)
+      const contentType = req.headers["content-type"] ?? "";
+      const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
+
+      if (boundaryMatch) {
+        // multipart 파싱
+        const boundary = "--" + boundaryMatch[1];
+        const parts = body.toString("latin1").split(boundary);
+        for (const part of parts) {
+          if (!part.includes("Content-Disposition")) continue;
+          const headerEnd = part.indexOf("\r\n\r\n");
+          if (headerEnd === -1) continue;
+          const headers = part.slice(0, headerEnd);
+          const fileContentRaw = part.slice(headerEnd + 4, part.lastIndexOf("\r\n"));
+
+          const ctMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
+          const fileMime = ctMatch ? ctMatch[1].trim() : "image/jpeg";
+          if (!fileMime.startsWith("image/")) continue;
+
+          const ext = fileMime.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+          const filename = `post-images/${Date.now()}.${ext}`;
+          const fileBuffer = Buffer.from(fileContentRaw, "latin1");
+
+          const publicUrl = await uploadBufferToStorage(fileBuffer, filename, fileMime);
+          if (!publicUrl) {
+            return res.status(500).json({ message: "Storage 업로드에 실패했습니다." });
+          }
+          return res.json({ url: publicUrl });
+        }
+        return res.status(400).json({ message: "이미지 파일을 찾을 수 없습니다." });
+      } else if (contentType.startsWith("image/")) {
+        // 바이너리 직접 전송
+        const ext = contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+        const filename = `post-images/${Date.now()}.${ext}`;
+        const publicUrl = await uploadBufferToStorage(body, filename, contentType);
+        if (!publicUrl) {
+          return res.status(500).json({ message: "Storage 업로드에 실패했습니다." });
+        }
+        return res.json({ url: publicUrl });
+      } else {
+        return res.status(400).json({ message: "지원하지 않는 Content-Type입니다." });
+      }
+    } catch (err) {
+      console.error("upload-image error:", err);
+      res.status(500).json({ message: "업로드 중 오류가 발생했습니다." });
+    }
+  });
+
+  // 2) 외부 URL → Storage 미러링
+  app.post("/api/mirror-image", async (req, res) => {
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const provided = req.headers["x-admin-password"] as string | undefined;
+    if (!adminPassword || provided !== adminPassword) {
+      return res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
+
+    const { url } = req.body as { url?: string };
+    if (!url || !/^https?:\/\/.+/i.test(url)) {
+      return res.status(400).json({ message: "올바른 URL을 입력하세요." });
+    }
+
+    try {
+      const mirrored = await mirrorImageToStorage(url);
+      res.json({ url: mirrored });
+    } catch (err) {
+      console.error("mirror-image error:", err);
+      res.status(500).json({ message: "미러링 중 오류가 발생했습니다." });
     }
   });
 
