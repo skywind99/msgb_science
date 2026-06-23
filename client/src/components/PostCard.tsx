@@ -1,15 +1,16 @@
+import React from "react";
 import { type Post, type ContentBlock } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Calendar, ChevronRight } from "lucide-react";
+import { Calendar, ChevronRight, Microscope, FlaskConical, BookOpen, Rocket, Users, Globe } from "lucide-react";
 
-const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
-  home: "https://images.unsplash.com/photo-1532094349884-543559c5b4a8?w=800&auto=format&fit=crop",
-  lab_intro: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop",
-  science_class: "https://images.unsplash.com/photo-1628595351029-c2bf17511435?w=800&auto=format&fit=crop",
-  career_program: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800&auto=format&fit=crop",
-  student_program: "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop",
-  local_community: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&auto=format&fit=crop",
+const CATEGORY_META: Record<string, { icon: React.ReactNode; from: string; to: string }> = {
+  home:             { icon: <Microscope className="w-14 h-14 text-white/80" />, from: "from-blue-500",    to: "to-indigo-600" },
+  lab_intro:        { icon: <FlaskConical className="w-14 h-14 text-white/80" />, from: "from-emerald-500", to: "to-teal-600" },
+  science_class:    { icon: <BookOpen className="w-14 h-14 text-white/80" />,    from: "from-violet-500",  to: "to-purple-600" },
+  career_program:   { icon: <Rocket className="w-14 h-14 text-white/80" />,      from: "from-orange-400",  to: "to-rose-500" },
+  student_program:  { icon: <Users className="w-14 h-14 text-white/80" />,       from: "from-sky-400",     to: "to-blue-600" },
+  local_community:  { icon: <Globe className="w-14 h-14 text-white/80" />,       from: "from-lime-400",    to: "to-green-600" },
 };
 
 const isImageUrl = (str?: string | null): str is string => {
@@ -27,7 +28,8 @@ interface Props {
 export function PostCard({ post }: Props) {
   const blocks = post.blocks as ContentBlock[] | null;
   const firstBlockImg = blocks?.map(b => isImageUrl(b.imageUrl) ? b.imageUrl : isImageUrl(b.content) ? b.content : null).find(Boolean) ?? null;
-  const thumbnail = post.imageUrl || firstBlockImg || CATEGORY_DEFAULT_IMAGES[post.category] || null;
+  const thumbnail = post.imageUrl || firstBlockImg || null;
+  const categoryMeta = CATEGORY_META[post.category];
 
   return (
     <Link href={`/posts/${post.id}`} className="group bg-card rounded-2xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full cursor-pointer" data-testid={`card-post-${post.id}`}>
@@ -42,7 +44,9 @@ export function PostCard({ post }: Props) {
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
           </>
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-primary/10 to-blue-100" />
+          <div className={`w-full h-full flex flex-col items-center justify-center gap-3 bg-gradient-to-br ${categoryMeta?.from ?? "from-primary/20"} ${categoryMeta?.to ?? "to-blue-200"}`}>
+            {categoryMeta?.icon}
+          </div>
         )}
       </div>
       
