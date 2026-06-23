@@ -262,6 +262,20 @@ export async function registerRoutes(
     if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
     const success = await storage.deletePost(id);
     if (!success) return res.status(404).json({ message: "Post not found" });
+
+    // 이 게시물 링크를 가진 팝업 자동 삭제
+    try {
+      const postUrl = `/posts/${id}`;
+      const allPopups = await storage.getPopups();
+      for (const popup of allPopups) {
+        if (popup.linkUrl?.includes(postUrl)) {
+          await storage.deletePopup(popup.id);
+        }
+      }
+    } catch (err) {
+      console.error("popup auto-delete error:", err);
+    }
+
     res.status(204).end();
   });
 
