@@ -64,7 +64,7 @@ interface ImageInputProps {
 }
 
 function ImageInput({ value, onChange, adminPassword, label, placeholder }: ImageInputProps) {
-  const [mode, setMode] = useState<"url" | "file">("url");
+  const [mode, setMode] = useState<"url" | "file">("file");
   const [uploading, setUploading] = useState(false);
   const [mirroring, setMirroring] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -109,17 +109,8 @@ function ImageInput({ value, onChange, adminPassword, label, placeholder }: Imag
         </div>
       )}
 
-      {/* 탭: URL / 파일 */}
+      {/* 탭: 파일 / URL */}
       <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
-        <button
-          type="button"
-          onClick={() => setMode("url")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-            mode === "url" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Link2 className="w-3 h-3" /> URL 입력
-        </button>
         <button
           type="button"
           onClick={() => setMode("file")}
@@ -128,6 +119,15 @@ function ImageInput({ value, onChange, adminPassword, label, placeholder }: Imag
           }`}
         >
           <Upload className="w-3 h-3" /> 파일 업로드
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("url")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+            mode === "url" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Link2 className="w-3 h-3" /> URL 입력
         </button>
       </div>
 
