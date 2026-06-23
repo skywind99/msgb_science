@@ -289,8 +289,8 @@ export default function PostDetail() {
 
   const handleEditSubmit = () => {
     const cleanedBlocks = editBlocks
-      .map((b) => ({ imageUrl: b.imageUrl?.trim() || undefined, content: b.content?.trim() || undefined }))
-      .filter((b) => b.imageUrl || b.content);
+      .map((b) => ({ imageUrl: b.imageUrl?.trim() || undefined, content: b.content?.trim() || undefined, youtubeUrl: (b as any).youtubeUrl?.trim() || undefined }))
+      .filter((b) => b.imageUrl || b.content || b.youtubeUrl);
     const firstText = cleanedBlocks.find((b) => b.content)?.content ?? "";
     updateMutation.mutate({
       title: editTitle,
