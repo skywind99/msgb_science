@@ -156,6 +156,39 @@ export async function registerRoutes(
     }
   });
 
+  // ── Storage 사용량 조회 ───────────────────────────────────
+  app.get("/api/storage-usage", async (req, res) => {
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const provided = req.headers["x-admin-password"] as string | undefined;
+    if (!adminPassword || provided !== adminPassword) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    try {
+      const { createClient } = await import("@supabase/supabase-js");
+      const url = process.env.SUPABASE_URL;
+      const key = process.env.SUPABASE_SERVICE_KEY;
+      if (!url || !key) return res.json({ used: 0, total: 1024 * 1024 * 1024 });
+
+      const supabase = createClient(url, key);
+      const BUCKET = "news-images";
+      const TOTAL = 1024 * 1024 * 1024; // Supabase 무료 1GB
+
+      let totalSize = 0;
+      const folders = ["scraped", "post-images"];
+      for (const folder of folders) {
+        const { data } = await supabase.storage.from(BUCKET).list(folder, { limit: 1000 });
+        if (data) {
+          totalSize += data.reduce((sum: number, f: any) => sum + (f.metadata?.size ?? 0), 0);
+        }
+      }
+
+      res.json({ used: totalSize, total: TOTAL });
+    } catch (err) {
+      console.error("storage-usage error:", err);
+      res.json({ used: 0, total: 1024 * 1024 * 1024 });
+    }
+  });
+
   // 2) 외부 URL → Storage 미러링
   app.post("/api/mirror-image", async (req, res) => {
     const adminPassword = process.env.ADMIN_PASSWORD;
