@@ -296,7 +296,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
 
   const handleClose = () => {
     setIsOpen(false);
-    form.reset();
+    form.reset({ category, title: "", content: "", imageUrl: "" });
     setBlocks([{ imageUrl: "", content: "" }]);
     setThumbnailUrl("");
   };
@@ -315,6 +315,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     createPost.mutate(
       {
         ...data,
+        category, // prop에서 직접 사용 (hidden input 무시)
         imageUrl: thumbnailUrl || undefined,
         content: firstText,
         blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
