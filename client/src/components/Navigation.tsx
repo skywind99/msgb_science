@@ -1,6 +1,6 @@
 import { Link, useLocation } from "wouter";
-import { Microscope, Menu, X, Lock, LogOut, ShieldCheck } from "lucide-react";
-import { useState } from "react";
+import { Microscope, Menu, X, Lock, LogOut, ShieldCheck, HardDrive } from "lucide-react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAdmin } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
@@ -82,11 +82,41 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+function StorageBadge({ adminPassword }: { adminPassword: string }) {
+  const [info, setInfo] = useState<{ used: number; total: number } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/storage-usage", {
+      headers: { "x-admin-password": adminPassword },
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (typeof d.used === "number") setInfo(d);
+      })
+      .catch(() => {});
+  }, [adminPassword]);
+
+  if (!info) return null;
+
+  const usedMB = (info.used / 1024 / 1024).toFixed(1);
+  const totalMB = info.total / 1024 / 1024;
+  const pct = Math.min(100, (info.used / info.total) * 100);
+  const color = pct > 80 ? "text-red-500" : pct > 50 ? "text-yellow-500" : "text-green-500";
+
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-xs font-semibold text-muted-foreground" title={`Storage ${pct.toFixed(1)}% 사용 중`}>
+      <HardDrive className={`w-3.5 h-3.5 ${color}`} />
+      <span className={color}>{usedMB}MB</span>
+      <span className="text-muted-foreground/50">/ {totalMB}MB</span>
+    </div>
+  );
+}
+
 export function Navigation() {
   const [location] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const { isAdmin, logout } = useAdmin();
+  const { isAdmin, logout, password } = useAdmin();
 
   return (
     <>
@@ -134,13 +164,16 @@ export function Navigation() {
             {/* Right side: Admin + Mobile Menu */}
             <div className="flex items-center gap-2">
               {isAdmin ? (
-                <button
-                  onClick={logout}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-                >
-                  <LogOut className="w-3.5 h-3.5" />
-                  관리자 로그아웃
-                </button>
+                <>
+                  <StorageBadge adminPassword={password} />
+                  <button
+                    onClick={logout}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    관리자 로그아웃
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={() => setShowLoginModal(true)}
