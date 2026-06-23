@@ -1,7 +1,16 @@
 import { type Post, type ContentBlock } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Calendar, ChevronRight, ImageOff } from "lucide-react";
+import { Calendar, ChevronRight } from "lucide-react";
+
+const CATEGORY_DEFAULT_IMAGES: Record<string, string> = {
+  home: "https://images.unsplash.com/photo-1532094349884-543559c5b4a8?w=800&auto=format&fit=crop",
+  lab_intro: "https://images.unsplash.com/photo-1581091226825-a6a2a5aee158?w=800&auto=format&fit=crop",
+  science_class: "https://images.unsplash.com/photo-1628595351029-c2bf17511435?w=800&auto=format&fit=crop",
+  career_program: "https://images.unsplash.com/photo-1523240795612-9a054b0db644?w=800&auto=format&fit=crop",
+  student_program: "https://images.unsplash.com/photo-1509062522246-3755977927d7?w=800&auto=format&fit=crop",
+  local_community: "https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800&auto=format&fit=crop",
+};
 
 const isImageUrl = (str?: string | null): str is string => {
   if (!str) return false;
@@ -18,7 +27,7 @@ interface Props {
 export function PostCard({ post }: Props) {
   const blocks = post.blocks as ContentBlock[] | null;
   const firstBlockImg = blocks?.map(b => isImageUrl(b.imageUrl) ? b.imageUrl : isImageUrl(b.content) ? b.content : null).find(Boolean) ?? null;
-  const thumbnail = post.imageUrl || firstBlockImg || null;
+  const thumbnail = post.imageUrl || firstBlockImg || CATEGORY_DEFAULT_IMAGES[post.category] || null;
 
   return (
     <Link href={`/posts/${post.id}`} className="group bg-card rounded-2xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full cursor-pointer" data-testid={`card-post-${post.id}`}>
@@ -33,9 +42,7 @@ export function PostCard({ post }: Props) {
             <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-60" />
           </>
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/5 to-blue-50">
-            <ImageOff className="w-10 h-10 text-muted-foreground/30" />
-          </div>
+          <div className="w-full h-full bg-gradient-to-br from-primary/10 to-blue-100" />
         )}
       </div>
       
