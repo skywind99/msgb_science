@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@shared/routes";
 import { useCreatePost } from "@/hooks/use-posts";
-import { X, Loader2, Pencil, Plus, Trash2, ImageIcon, AlignLeft, Upload, Link2 } from "lucide-react";
+import { X, Loader2, Pencil, Plus, Trash2, ImageIcon, AlignLeft, Upload, Link2, Youtube } from "lucide-react";
 import { z } from "zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -306,8 +306,9 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
       .map((b) => ({
         imageUrl: b.imageUrl?.trim() || undefined,
         content: b.content?.trim() || undefined,
+        youtubeUrl: b.youtubeUrl?.trim() || undefined,
       }))
-      .filter((b) => b.imageUrl || b.content);
+      .filter((b) => b.imageUrl || b.content || b.youtubeUrl);
 
     const firstText = cleanedBlocks.find((b) => b.content)?.content ?? "";
 
