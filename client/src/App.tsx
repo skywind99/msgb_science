@@ -9,6 +9,7 @@ import Home from "@/pages/Home";
 import CategoryPage from "@/pages/CategoryPage";
 import PostDetail from "@/pages/PostDetail";
 import NotFound from "@/pages/not-found";
+import { PopupDisplay } from "@/components/PopupDisplay";
 
 function Router() {
   return (
@@ -82,6 +83,7 @@ function App() {
       <TooltipProvider>
         <AdminProvider>
           <Toaster />
+          <PopupDisplay />
           <Router />
         </AdminProvider>
       </TooltipProvider>
