@@ -16,11 +16,6 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
-    // upload-image는 json이 아니므로 파싱 건너뜀
-    type: (req) => {
-      const ct = req.headers["content-type"] ?? "";
-      return ct.startsWith("application/json") || ct.startsWith("text/");
-    },
   })
 );
 app.use(express.urlencoded({ extended: false }));
