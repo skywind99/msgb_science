@@ -123,70 +123,33 @@ export async function registerRoutes(
   });
 
   // ── 이미지 업로드 ────────────────────────────────────────
-  // 1) 클라이언트에서 파일 직접 업로드 (multipart/form-data)
+  // express.raw({ type: "image/*" }) 가 app/index 레벨에서 등록되어
+  // req.body 가 Buffer 로 들어옴
   app.post("/api/upload-image", async (req, res) => {
-    const checkAdmin = (): boolean => {
-      const adminPassword = process.env.ADMIN_PASSWORD;
-      const provided = req.headers["x-admin-password"] as string | undefined;
-      if (!adminPassword || provided !== adminPassword) {
-        res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
-        return false;
-      }
-      return true;
-    };
-    if (!checkAdmin()) return;
+    const adminPassword = process.env.ADMIN_PASSWORD;
+    const provided = req.headers["x-admin-password"] as string | undefined;
+    if (!adminPassword || provided !== adminPassword) {
+      return res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
+    }
 
     try {
-      const chunks: Buffer[] = [];
-      req.on("data", (chunk: Buffer) => chunks.push(chunk));
-      await new Promise<void>((resolve, reject) => {
-        req.on("end", resolve);
-        req.on("error", reject);
-      });
-      const body = Buffer.concat(chunks);
-
-      // Content-Type: multipart/form-data 파싱 (간단 버전)
-      const contentType = req.headers["content-type"] ?? "";
-      const boundaryMatch = contentType.match(/boundary=([^\s;]+)/);
-
-      if (boundaryMatch) {
-        // multipart 파싱
-        const boundary = "--" + boundaryMatch[1];
-        const parts = body.toString("latin1").split(boundary);
-        for (const part of parts) {
-          if (!part.includes("Content-Disposition")) continue;
-          const headerEnd = part.indexOf("\r\n\r\n");
-          if (headerEnd === -1) continue;
-          const headers = part.slice(0, headerEnd);
-          const fileContentRaw = part.slice(headerEnd + 4, part.lastIndexOf("\r\n"));
-
-          const ctMatch = headers.match(/Content-Type:\s*([^\r\n]+)/i);
-          const fileMime = ctMatch ? ctMatch[1].trim() : "image/jpeg";
-          if (!fileMime.startsWith("image/")) continue;
-
-          const ext = fileMime.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
-          const filename = `post-images/${Date.now()}.${ext}`;
-          const fileBuffer = Buffer.from(fileContentRaw, "latin1");
-
-          const publicUrl = await uploadBufferToStorage(fileBuffer, filename, fileMime);
-          if (!publicUrl) {
-            return res.status(500).json({ message: "Storage 업로드에 실패했습니다." });
-          }
-          return res.json({ url: publicUrl });
-        }
-        return res.status(400).json({ message: "이미지 파일을 찾을 수 없습니다." });
-      } else if (contentType.startsWith("image/")) {
-        // 바이너리 직접 전송
-        const ext = contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
-        const filename = `post-images/${Date.now()}.${ext}`;
-        const publicUrl = await uploadBufferToStorage(body, filename, contentType);
-        if (!publicUrl) {
-          return res.status(500).json({ message: "Storage 업로드에 실패했습니다." });
-        }
-        return res.json({ url: publicUrl });
-      } else {
-        return res.status(400).json({ message: "지원하지 않는 Content-Type입니다." });
+      const contentType = (req.headers["content-type"] ?? "").split(";")[0].trim();
+      if (!contentType.startsWith("image/")) {
+        return res.status(400).json({ message: "이미지 파일만 업로드 가능합니다." });
       }
+
+      const body = req.body as Buffer;
+      if (!body || body.length === 0) {
+        return res.status(400).json({ message: "파일이 비어 있습니다." });
+      }
+
+      const ext = contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+      const filename = `post-images/${Date.now()}.${ext}`;
+      const publicUrl = await uploadBufferToStorage(body, filename, contentType);
+      if (!publicUrl) {
+        return res.status(500).json({ message: "Storage 업로드 실패. SUPABASE 환경변수를 확인하세요." });
+      }
+      return res.json({ url: publicUrl });
     } catch (err) {
       console.error("upload-image error:", err);
       res.status(500).json({ message: "업로드 중 오류가 발생했습니다." });
