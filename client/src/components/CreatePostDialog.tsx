@@ -1,27 +1,221 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@shared/routes";
 import { useCreatePost } from "@/hooks/use-posts";
-import { X, Loader2, Pencil, Plus, Trash2, ImageIcon, AlignLeft } from "lucide-react";
+import { X, Loader2, Pencil, Plus, Trash2, ImageIcon, AlignLeft, Upload, Link2 } from "lucide-react";
 import { z } from "zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { contentBlockSchema, type ContentBlock } from "@shared/schema";
+import { useAdminPassword } from "@/contexts/admin";
 
 type FormValues = z.infer<typeof api.posts.create.input>;
 
-interface Props {
-  category: string;
-  categoryLabel: string;
+// 관리자 비밀번호를 context에서 가져오기
+function useAdminPw() {
+  try {
+    return useAdminPassword();
+  } catch {
+    return "";
+  }
+}
+
+// 이미지 업로드 (파일 → Storage → URL)
+async function uploadImageFile(file: File, adminPassword: string): Promise<string | null> {
+  const res = await fetch("/api/upload-image", {
+    method: "POST",
+    headers: {
+      "Content-Type": file.type,
+      "x-admin-password": adminPassword,
+    },
+    body: file,
+  });
+  if (!res.ok) return null;
+  const data = await res.json() as { url?: string };
+  return data.url ?? null;
+}
+
+// 외부 URL → Storage 미러링
+async function mirrorImage(url: string, adminPassword: string): Promise<string> {
+  try {
+    const res = await fetch("/api/mirror-image", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-admin-password": adminPassword,
+      },
+      body: JSON.stringify({ url }),
+    });
+    if (!res.ok) return url;
+    const data = await res.json() as { url?: string };
+    return data.url ?? url;
+  } catch {
+    return url;
+  }
+}
+
+interface ImageInputProps {
+  value: string;
+  onChange: (url: string) => void;
+  adminPassword: string;
+  label?: string;
+  placeholder?: string;
+}
+
+function ImageInput({ value, onChange, adminPassword, label, placeholder }: ImageInputProps) {
+  const [mode, setMode] = useState<"url" | "file">("url");
+  const [uploading, setUploading] = useState(false);
+  const [mirroring, setMirroring] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const { toast } = useToast();
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadImageFile(file, adminPassword);
+      if (url) {
+        onChange(url);
+        toast({ title: "이미지 업로드 완료" });
+      } else {
+        toast({ title: "업로드 실패", variant: "destructive" });
+      }
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const handleMirror = async () => {
+    if (!value || !/^https?:\/\//i.test(value)) return;
+    setMirroring(true);
+    try {
+      const mirrored = await mirrorImage(value, adminPassword);
+      onChange(mirrored);
+      if (mirrored !== value) toast({ title: "이미지가 서버에 저장되었습니다." });
+    } finally {
+      setMirroring(false);
+    }
+  };
+
+  return (
+    <div className="space-y-2">
+      {label && (
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+          <ImageIcon className="w-3.5 h-3.5 text-primary" />
+          {label}
+        </div>
+      )}
+
+      {/* 탭: URL / 파일 */}
+      <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
+        <button
+          type="button"
+          onClick={() => setMode("url")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+            mode === "url" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Link2 className="w-3 h-3" /> URL 입력
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode("file")}
+          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+            mode === "file" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Upload className="w-3 h-3" /> 파일 업로드
+        </button>
+      </div>
+
+      {mode === "url" ? (
+        <div className="space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              placeholder={placeholder ?? "https://example.com/image.jpg"}
+              className="flex-1 px-3 py-2 text-sm rounded-lg border-2 border-primary/20 bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
+            />
+            {value && /^https?:\/\//i.test(value) && (
+              <button
+                type="button"
+                onClick={handleMirror}
+                disabled={mirroring}
+                title="이 URL 이미지를 서버에 저장"
+                className="flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-all whitespace-nowrap"
+              >
+                {mirroring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                저장
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            외부 URL 입력 후 <strong>저장</strong> 버튼을 누르면 이미지를 서버에 보관합니다.
+          </p>
+        </div>
+      ) : (
+        <div>
+          <label
+            className={`flex flex-col items-center justify-center gap-2 w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
+              uploading
+                ? "border-primary/30 bg-primary/5"
+                : "border-primary/30 hover:border-primary hover:bg-primary/5"
+            }`}
+          >
+            {uploading ? (
+              <Loader2 className="w-6 h-6 text-primary animate-spin" />
+            ) : (
+              <>
+                <Upload className="w-6 h-6 text-primary/60" />
+                <span className="text-xs text-muted-foreground">클릭하여 이미지 선택</span>
+                <span className="text-[10px] text-muted-foreground/60">JPG, PNG, GIF, WEBP</span>
+              </>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleFileChange}
+              disabled={uploading}
+            />
+          </label>
+        </div>
+      )}
+
+      {/* 미리보기 */}
+      {value && /^https?:\/\//.test(value) && (
+        <div className="relative">
+          <img
+            src={value}
+            alt="미리보기"
+            className="w-full h-40 object-cover rounded-lg border border-border"
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+          />
+          {value.includes("supabase") && (
+            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-green-500/90 text-white text-[10px] font-bold">
+              ✓ 서버 저장됨
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function BlockEditor({
   blocks,
   onChange,
+  adminPassword,
 }: {
   blocks: ContentBlock[];
   onChange: (blocks: ContentBlock[]) => void;
+  adminPassword: string;
 }) {
   const addBlock = () => onChange([...blocks, { imageUrl: "", content: "" }]);
   const removeBlock = (idx: number) => onChange(blocks.filter((_, i) => i !== idx));
@@ -42,30 +236,14 @@ function BlockEditor({
             )}
           </div>
 
-          {/* Image URL */}
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-              <ImageIcon className="w-3.5 h-3.5 text-primary" />
-              🖼️ 이미지 URL 붙여넣기
-            </div>
-            <input
-              type="text"
-              value={block.imageUrl ?? ""}
-              onChange={(e) => updateBlock(idx, "imageUrl", e.target.value)}
-              placeholder="학교 홈페이지 등에서 이미지 주소 복사 후 붙여넣기"
-              className="w-full px-3 py-2 text-sm rounded-lg border-2 border-primary/20 bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-            />
-            {block.imageUrl && /^https?:\/\//.test(block.imageUrl) && (
-              <img
-                src={block.imageUrl}
-                alt="미리보기"
-                className="w-full h-40 object-cover rounded-lg border border-border"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
-            )}
-          </div>
+          <ImageInput
+            value={block.imageUrl ?? ""}
+            onChange={(url) => updateBlock(idx, "imageUrl", url)}
+            adminPassword={adminPassword}
+            label="🖼️ 이미지"
+            placeholder="이미지 URL 또는 파일 업로드"
+          />
 
-          {/* Content */}
           <div className="space-y-2">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <AlignLeft className="w-3.5 h-3.5 text-primary" />
@@ -93,11 +271,18 @@ function BlockEditor({
   );
 }
 
+interface Props {
+  category: string;
+  categoryLabel: string;
+}
+
 export function CreatePostDialog({ category, categoryLabel }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [blocks, setBlocks] = useState<ContentBlock[]>([{ imageUrl: "", content: "" }]);
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
   const createPost = useCreatePost();
   const { toast } = useToast();
+  const adminPassword = useAdminPw();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(api.posts.create.input),
@@ -113,6 +298,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setIsOpen(false);
     form.reset();
     setBlocks([{ imageUrl: "", content: "" }]);
+    setThumbnailUrl("");
   };
 
   const onSubmit = (data: FormValues) => {
@@ -128,6 +314,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     createPost.mutate(
       {
         ...data,
+        imageUrl: thumbnailUrl || undefined,
         content: firstText,
         blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       },
@@ -206,22 +393,15 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                   {/* Thumbnail */}
                   <div className="space-y-2">
                     <label className="text-sm font-semibold text-foreground">
-                      대표 이미지 URL
+                      대표 이미지
                       <span className="ml-1.5 text-xs font-normal text-muted-foreground">(목록 썸네일 — 비워두면 본문 첫 이미지 사용)</span>
                     </label>
-                    <input
-                      {...form.register("imageUrl")}
+                    <ImageInput
+                      value={thumbnailUrl}
+                      onChange={setThumbnailUrl}
+                      adminPassword={adminPassword}
                       placeholder="https://example.com/thumbnail.jpg"
-                      className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
                     />
-                    {form.watch("imageUrl") && (
-                      <img
-                        src={form.watch("imageUrl") as string}
-                        alt="썸네일 미리보기"
-                        className="w-full h-36 object-cover rounded-xl border border-border"
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-                      />
-                    )}
                   </div>
 
                   {/* Blocks */}
@@ -230,7 +410,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                       본문 블록
                       <span className="ml-1.5 text-xs font-normal text-muted-foreground">(이미지와 내용을 자유롭게 조합)</span>
                     </label>
-                    <BlockEditor blocks={blocks} onChange={setBlocks} />
+                    <BlockEditor blocks={blocks} onChange={setBlocks} adminPassword={adminPassword} />
                   </div>
                 </form>
               </div>
