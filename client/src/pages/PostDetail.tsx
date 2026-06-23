@@ -3,7 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type Post, type ContentBlock } from "@shared/schema";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical } from "lucide-react";
+import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube } from "lucide-react";
+import { YoutubeEmbed, isYoutubeUrl } from "@/components/YoutubeEmbed";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import {
@@ -98,6 +99,17 @@ function BlockEditor({
                 onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
               />
             )}
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
+              <Youtube className="w-3 h-3 text-red-500" /> 🎬 유튜브 URL
+            </div>
+            <Input
+              value={(block as any).youtubeUrl ?? ""}
+              onChange={(e) => updateBlock(idx, "youtubeUrl" as any, e.target.value)}
+              placeholder="https://www.youtube.com/watch?v=..."
+              className="text-sm"
+            />
           </div>
           <div className="space-y-1.5">
             <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
@@ -306,13 +318,13 @@ export default function PostDetail() {
             const imgSrc = isImageUrl(block.imageUrl) ? block.imageUrl
                          : isImageUrl(block.content) ? block.content
                          : null;
-            // 대표 이미지와 동일하면 블록에서 중복 표시 안 함
             const skipImg = imgSrc && imgSrc === post.imageUrl && idx === 0 && !postBlocks;
             const textContent = isImageUrl(block.content) ? null : (block.content || null);
+            const ytUrl = (block as any).youtubeUrl as string | undefined;
             return (
-              <div key={idx}>
+              <div key={idx} className="space-y-4">
                 {imgSrc && !skipImg && (
-                  <div className="mb-4 rounded-2xl overflow-hidden border border-border shadow-md">
+                  <div className="rounded-2xl overflow-hidden border border-border shadow-md">
                     <img
                       src={imgSrc}
                       alt=""
@@ -320,6 +332,9 @@ export default function PostDetail() {
                       data-testid={`img-block-${idx}`}
                     />
                   </div>
+                )}
+                {ytUrl && isYoutubeUrl(ytUrl) && (
+                  <YoutubeEmbed url={ytUrl} />
                 )}
                 {textContent && (
                   <div className="prose prose-lg max-w-none text-foreground leading-relaxed whitespace-pre-wrap">
