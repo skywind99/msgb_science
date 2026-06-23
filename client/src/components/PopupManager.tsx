@@ -1,7 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { X, Plus, Trash2, Eye, EyeOff, Settings, ChevronLeft } from "lucide-react";
 import type { Popup } from "@shared/schema";
 import { useAdmin } from "@/contexts/admin";
+import { PopupDisplay } from "@/components/PopupDisplay";
 import { useToast } from "@/hooks/use-toast";
 
 interface PopupFormData {
@@ -28,6 +29,8 @@ export function PopupManager() {
   const [editId, setEditId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const { password } = useAdmin();
+  const [previewPopup, setPreviewPopup] = useState<Popup | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const authHeaders = { "Content-Type": "application/json", "x-admin-password": password };
@@ -46,6 +49,7 @@ export function PopupManager() {
     setForm(empty);
     setEditId(null);
     setView("form");
+    setTimeout(() => scrollRef.current?.scrollTo(0, 0), 0);
   };
 
   const openEdit = (p: Popup) => {
@@ -59,6 +63,7 @@ export function PopupManager() {
     });
     setEditId(p.id);
     setView("form");
+    setTimeout(() => scrollRef.current?.scrollTo(0, 0), 0);
   };
 
   const goList = () => {
@@ -161,7 +166,7 @@ export function PopupManager() {
           {/* 모달 박스 */}
           <div
             className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col overflow-hidden"
-            style={{ maxHeight: "80vh" }}
+            style={{ maxHeight: "90vh" }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* 헤더 */}
@@ -195,7 +200,7 @@ export function PopupManager() {
             </div>
 
             {/* 본문 */}
-            <div className="overflow-y-auto flex-1 p-5">
+            <div ref={scrollRef} className="overflow-y-auto flex-1 p-5">
               {/* 목록 뷰 */}
               {view === "list" && (
                 <div className="space-y-3">
@@ -234,6 +239,13 @@ export function PopupManager() {
                             : <EyeOff className="w-4 h-4 text-gray-400" />}
                         </button>
                         <button
+                          onClick={() => setPreviewPopup(p)}
+                          title="미리보기"
+                          className="px-2 py-1 rounded-lg text-xs font-semibold text-gray-500 hover:bg-white transition-colors"
+                        >
+                          미리보기
+                        </button>
+                        <button
                           onClick={() => openEdit(p)}
                           className="px-2 py-1 rounded-lg text-xs font-semibold text-blue-600 hover:bg-white transition-colors"
                         >
@@ -261,7 +273,7 @@ export function PopupManager() {
                     <img
                       src={form.imageUrl}
                       alt=""
-                      className="w-full h-36 object-cover rounded-xl border"
+                      className="w-full h-24 object-cover rounded-xl border"
                       onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                     />
                   )}
@@ -300,6 +312,13 @@ export function PopupManager() {
             )}
           </div>
         </div>
+      )}
+      {/* 미리보기 */}
+      {previewPopup && (
+        <PopupDisplay
+          previewPopup={previewPopup}
+          onPreviewClose={() => setPreviewPopup(null)}
+        />
       )}
     </>
   );
