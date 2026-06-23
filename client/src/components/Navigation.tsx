@@ -105,10 +105,9 @@ function StorageBadge({ adminPassword }: { adminPassword: string }) {
   const color = pct > 80 ? "text-red-500" : pct > 50 ? "text-yellow-500" : "text-green-500";
 
   return (
-    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-muted text-xs font-semibold text-muted-foreground" title={`Storage ${pct.toFixed(1)}% 사용 중`}>
+    <div className="flex items-center gap-1 px-2 py-1.5 rounded-full bg-muted text-xs font-semibold" title={`Storage ${usedMB}MB / ${totalMB}MB (${pct.toFixed(1)}%)`}>
       <HardDrive className={`w-3.5 h-3.5 ${color}`} />
-      <span className={color}>{usedMB}MB</span>
-      <span className="text-muted-foreground/50">/ {totalMB}MB</span>
+      <span className={color}>{usedMB}M</span>
     </div>
   );
 }
@@ -170,10 +169,10 @@ export function Navigation() {
                   <PopupManager />
                   <button
                     onClick={logout}
-                    className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
+                    title="관리자 로그아웃"
+                    className="p-2 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
                   >
-                    <LogOut className="w-3.5 h-3.5" />
-                    관리자 로그아웃
+                    <LogOut className="w-4 h-4" />
                   </button>
                 </>
               ) : (
