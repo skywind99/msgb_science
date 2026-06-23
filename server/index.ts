@@ -17,10 +17,15 @@ app.use(
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
+    type: (req) => {
+      const ct = req.headers["content-type"] ?? "";
+      return ct.startsWith("application/json") || ct.startsWith("text/");
+    },
   }),
 );
 
 app.use(express.urlencoded({ extended: false }));
+app.use("/api/upload-image", express.raw({ type: "image/*", limit: "10mb" }));
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
