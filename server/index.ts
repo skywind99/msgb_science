@@ -1,3 +1,6 @@
+// .env 로드는 다른 import보다 먼저 실행돼야 한다.
+// ./routes → ./db 가 모듈 최상단에서 DATABASE_URL을 읽기 때문.
+import "dotenv/config";
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
