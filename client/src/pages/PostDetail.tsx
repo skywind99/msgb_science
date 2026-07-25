@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { useAdmin } from "@/contexts/admin";
+import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 
 const isImageUrl = (str?: string | null): str is string => {
   if (!str) return false;
@@ -54,8 +54,8 @@ const CATEGORY_ROUTES: Record<string, string> = {
 
 // 수정 다이얼로그용 이미지 입력 (파일업로드 + URL)
 function BlockImageInput({
-  value, onChange, adminPassword,
-}: { value: string; onChange: (url: string) => void; adminPassword: string }) {
+  value, onChange, authHeaders,
+}: { value: string; onChange: (url: string) => void; authHeaders: Record<string, string> }) {
   const [mode, setMode] = useState<"file" | "url">("file");
   const [uploading, setUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -66,7 +66,7 @@ function BlockImageInput({
     try {
       const res = await fetch("/api/upload-image", {
         method: "POST",
-        headers: { "Content-Type": file.type, "x-admin-password": adminPassword },
+        headers: { "Content-Type": file.type, ...authHeaders },
         body: file,
       });
       if (res.ok) {
@@ -113,11 +113,11 @@ function BlockImageInput({
 function BlockEditor({
   blocks,
   onChange,
-  adminPassword,
+  authHeaders,
 }: {
   blocks: ContentBlock[];
   onChange: (blocks: ContentBlock[]) => void;
-  adminPassword: string;
+  authHeaders: Record<string, string>;
 }) {
   const addBlock = () => onChange([...blocks, { imageUrl: "", content: "" }]);
   const removeBlock = (idx: number) => onChange(blocks.filter((_, i) => i !== idx));
@@ -144,7 +144,7 @@ function BlockEditor({
           <BlockImageInput
             value={block.imageUrl ?? ""}
             onChange={(url) => updateBlock(idx, "imageUrl", url)}
-            adminPassword={adminPassword}
+            authHeaders={authHeaders}
           />
           <div className="space-y-1.5">
             <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
@@ -186,7 +186,8 @@ export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { isAdmin, password } = useAdmin();
+  const { isAdmin } = useAdmin();
+  const authHeaders = useAuthHeaders();
 
   const [editOpen, setEditOpen] = useState(false);
   const [popupRegistering, setPopupRegistering] = useState(false);
@@ -207,7 +208,7 @@ export default function PostDetail() {
   const authedFetch = async (method: string, url: string, data?: unknown) => {
     const res = await fetch(url, {
       method,
-      headers: { "Content-Type": "application/json", "x-admin-password": password },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
     });
@@ -259,7 +260,7 @@ export default function PostDetail() {
       };
       const res = await fetch("/api/admin/popups", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-password": password },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify(body),
       });
       if (res.ok) {
@@ -458,11 +459,11 @@ export default function PostDetail() {
                 대표 이미지
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">(목록 썸네일)</span>
               </Label>
-              <BlockImageInput value={editImageUrl} onChange={setEditImageUrl} adminPassword={password} />
+              <BlockImageInput value={editImageUrl} onChange={setEditImageUrl} authHeaders={authHeaders} />
             </div>
             <div className="space-y-2">
               <Label>본문 블록</Label>
-              <BlockEditor blocks={editBlocks} onChange={setEditBlocks} adminPassword={password} />
+              <BlockEditor blocks={editBlocks} onChange={setEditBlocks} authHeaders={authHeaders} />
             </div>
           </div>
           <DialogFooter>

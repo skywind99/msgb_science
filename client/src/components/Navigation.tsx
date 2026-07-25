@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { Microscope, Menu, X, Lock, LogOut, ShieldCheck, HardDrive } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAdmin } from "@/contexts/admin";
+import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
 
@@ -17,13 +17,31 @@ export const NAV_ITEMS = [
 
 function AdminLoginModal({ onClose }: { onClose: () => void }) {
   const [pw, setPw] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login } = useAdmin();
+  const { login, loginWithEmail, teacherLoginAvailable } = useAdmin();
+  // 교사 로그인이 설정돼 있으면 그것을 기본으로 보여준다.
+  const [mode, setMode] = useState<"teacher" | "legacy">(
+    teacherLoginAvailable ? "teacher" : "legacy"
+  );
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+
+    if (mode === "teacher") {
+      const res = await loginWithEmail(email, pw);
+      setLoading(false);
+      if (res.ok) {
+        toast({ title: "로그인되었습니다." });
+        onClose();
+      } else {
+        toast({ title: res.message ?? "로그인에 실패했습니다.", variant: "destructive" });
+      }
+      return;
+    }
+
     const ok = await login(pw);
     setLoading(false);
     if (ok) {
@@ -48,17 +66,35 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
             <ShieldCheck className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-foreground">관리자 로그인</h2>
-            <p className="text-xs text-muted-foreground">관리자 비밀번호를 입력하세요</p>
+            <h2 className="text-lg font-bold text-foreground">
+              {mode === "teacher" ? "교사 로그인" : "관리자 로그인"}
+            </h2>
+            <p className="text-xs text-muted-foreground">
+              {mode === "teacher"
+                ? "발급받은 이메일과 비밀번호를 입력하세요"
+                : "관리자 비밀번호를 입력하세요"}
+            </p>
           </div>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {mode === "teacher" && (
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="이메일"
+              autoComplete="username"
+              autoFocus
+              className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary transition-all"
+            />
+          )}
           <input
             type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
             placeholder="비밀번호"
-            autoFocus
+            autoComplete="current-password"
+            autoFocus={mode === "legacy"}
             className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary transition-all"
           />
           <div className="flex gap-3">
@@ -71,31 +107,45 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              disabled={loading || !pw}
+              disabled={loading || !pw || (mode === "teacher" && !email)}
               className="flex-1 px-4 py-3 rounded-xl font-semibold bg-primary text-primary-foreground disabled:opacity-50 transition-colors"
             >
               {loading ? "확인 중..." : "로그인"}
             </button>
           </div>
         </form>
+        {teacherLoginAvailable && (
+          <button
+            type="button"
+            onClick={() => {
+              setMode(mode === "teacher" ? "legacy" : "teacher");
+              setPw("");
+            }}
+            className="mt-4 w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {mode === "teacher" ? "관리자 비밀번호로 로그인" : "교사 계정으로 로그인"}
+          </button>
+        )}
       </motion.div>
     </div>
   );
 }
 
-function StorageBadge({ adminPassword }: { adminPassword: string }) {
+function StorageBadge() {
   const [info, setInfo] = useState<{ used: number; total: number } | null>(null);
+  const authHeaders = useAuthHeaders();
+  const headerKey = JSON.stringify(authHeaders);
 
   useEffect(() => {
-    fetch("/api/storage-usage", {
-      headers: { "x-admin-password": adminPassword },
-    })
+    fetch("/api/storage-usage", { headers: authHeaders })
       .then((r) => r.json())
       .then((d) => {
         if (typeof d.used === "number") setInfo(d);
       })
       .catch(() => {});
-  }, [adminPassword]);
+    // 헤더 내용이 바뀔 때만 다시 조회한다
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [headerKey]);
 
   if (!info) return null;
 
@@ -116,7 +166,7 @@ export function Navigation() {
   const [location] = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
-  const { isAdmin, logout, password } = useAdmin();
+  const { isAdmin, logout, user } = useAdmin();
 
   return (
     <>
@@ -165,11 +215,19 @@ export function Navigation() {
             <div className="flex items-center gap-2">
               {isAdmin ? (
                 <>
-                  <StorageBadge adminPassword={password} />
+                  <StorageBadge />
                   <PopupManager />
+                  {user && (
+                    <span
+                      className="hidden sm:inline text-xs font-semibold text-muted-foreground px-2"
+                      title={user.role === "admin" ? "전체 관리자" : "교사"}
+                    >
+                      {user.name}
+                    </span>
+                  )}
                   <button
                     onClick={logout}
-                    title="관리자 로그아웃"
+                    title={user ? "로그아웃" : "관리자 로그아웃"}
                     className="p-2 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
                   >
                     <LogOut className="w-4 h-4" />

@@ -27,7 +27,17 @@
 
 기존 P0 보안 과제가 이 단계에서 함께 해결된다.
 
-- [ ] Supabase Auth 도입, `profiles` 테이블 생성 (`id`는 `auth.users.id` 사용)
+진행 상황 (2026-07-25)
+- 슬라이스 1 완료 — Supabase Auth 로그인을 기존 방식과 **병행**으로 추가했다.
+  `server/auth.ts` 의 `resolveUser` 가 Bearer 토큰을 먼저 보고 없으면 기존
+  `x-admin-password` 로 넘어간다. 새 방식이 실패해도 기존 경로로 들어갈 수 있다.
+- 남은 일: Supabase 대시보드 설정(Email 활성화 / 자율 가입 차단 / 계정 생성),
+  `profiles` 행 삽입, 초대 흐름, 그리고 마지막에 `x-admin-password` 제거.
+
+- [x] `profiles` 테이블 생성 (`id`는 `auth.users.id` 사용)
+- [x] Supabase Auth 로그인 추가 (`server/auth.ts`, `client/src/lib/supabase.ts`)
+- [ ] Supabase 대시보드 설정 — Email 활성화, "Allow new users to sign up" 끄기, 첫 계정 생성
+- [ ] `profiles` 행 삽입 (첫 계정을 `role='admin'` 으로)
 - [ ] 기존 `x-admin-password` 헤더 인증 전면 제거
   - `client/src/contexts/admin.tsx` — localStorage 평문 비밀번호 저장 폐기
   - `server/routes.ts` — `checkAdminPassword` 를 토큰 검증 미들웨어로 교체
@@ -40,7 +50,7 @@
 
 ## 2단계 — 활동 게시물
 
-- [ ] `posts` 테이블 확장 — `shared/schema.ts` 적용 후 `npm run db:push`
+- [x] `posts` 테이블 확장 — `shared/schema.ts` 적용 후 `npm run db:push`
   - `applyEnabled`, `eventStart`, `eventEnd`, `location`, `capacity`
   - `applyStart`, `applyDeadline`, `applyNote`, `applyPasswordHash`, `allowWaitlist`, `authorId`
 - [ ] 교사용 활동 등록 폼 — `CreatePostDialog.tsx` 에 "신청 받기" 토글 및 접이식 활동 정보 영역 추가
@@ -52,7 +62,7 @@
 
 ## 3단계 — 학생 신청
 
-- [ ] `applications` 테이블 생성
+- [x] `applications` 테이블 생성
 - [ ] `POST /api/posts/:id/apply` — 신청 접수
   - 마감·정원 확인, 정원 초과 시 `allowWaitlist` 에 따라 대기자 등록
   - 6자리 확인코드 생성 → 해시 저장 → 평문은 응답에 한 번만 반환
@@ -109,7 +119,7 @@
 
 ### 품질
 - [ ] README 작성
-- [ ] `.env.example` 추가
+- [x] `.env.example` 추가
 - [ ] LICENSE 파일 추가
 - [ ] `client/public/a.txt` 삭제
 - [ ] 푸터 실제 주소·전화번호 반영 (현재 `000` 자리표시자)

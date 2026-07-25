@@ -4,6 +4,7 @@ import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
+import { ensureAuth, type AuthedRequest } from "./auth.js";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -126,11 +127,7 @@ export async function registerRoutes(
   // express.raw({ type: "image/*" }) 가 app/index 레벨에서 등록되어
   // req.body 가 Buffer 로 들어옴
   app.post("/api/upload-image", async (req, res) => {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    const provided = req.headers["x-admin-password"] as string | undefined;
-    if (!adminPassword || provided !== adminPassword) {
-      return res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
-    }
+    if (!(await ensureAuth(req, res))) return;
 
     try {
       const contentType = (req.headers["content-type"] ?? "").split(";")[0].trim();
@@ -160,11 +157,7 @@ export async function registerRoutes(
 
   // ── Storage 사용량 조회 ───────────────────────────────────
   app.get("/api/storage-usage", async (req, res) => {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    const provided = req.headers["x-admin-password"] as string | undefined;
-    if (!adminPassword || provided !== adminPassword) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
+    if (!(await ensureAuth(req, res))) return;
     try {
       // createSupabaseClient를 써야 한다. 직접 createClient를 부르면 Node 20에서
       // native WebSocket이 없어 예외가 난다 (imageUpload.ts 주석 참고).
@@ -194,11 +187,7 @@ export async function registerRoutes(
 
   // 2) 외부 URL → Storage 미러링
   app.post("/api/mirror-image", async (req, res) => {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    const provided = req.headers["x-admin-password"] as string | undefined;
-    if (!adminPassword || provided !== adminPassword) {
-      return res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
-    }
+    if (!(await ensureAuth(req, res))) return;
 
     const { url } = req.body as { url?: string };
     if (!url || !/^https?:\/\/.+/i.test(url)) {
@@ -214,22 +203,23 @@ export async function registerRoutes(
     }
   });
 
-  const checkAdminPassword = (req: any, res: any): boolean => {
-    const adminPassword = process.env.ADMIN_PASSWORD;
-    const provided = req.headers["x-admin-password"] as string | undefined;
-    if (!adminPassword || provided !== adminPassword) {
-      res.status(401).json({ message: "관리자 비밀번호가 올바르지 않습니다." });
-      return false;
-    }
-    return true;
-  };
+  // 로그인 확인. 기존 관리자 비밀번호와 교사 토큰 둘 다 여기를 통과한다.
+  app.post("/api/admin/verify", async (req, res) => {
+    const user = await ensureAuth(req, res);
+    if (!user) return;
+    res.json({ ok: true, role: user.role, name: user.name });
+  });
 
-  app.post("/api/admin/verify", (req, res) => {
-    if (checkAdminPassword(req, res)) res.json({ ok: true });
+  // 현재 로그인 상태. 교사 로그인 후 클라이언트가 역할을 확인하는 데 쓴다.
+  app.get("/api/me", async (req, res) => {
+    const user = await ensureAuth(req, res);
+    if (!user) return;
+    const { id, name, role, legacy } = (req as AuthedRequest).authUser ?? user;
+    res.json({ id, name, role, legacy });
   });
 
   app.post(api.posts.create.path, async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     try {
       const input = api.posts.create.input.parse(req.body);
       const post = await storage.createPost(input);
@@ -243,7 +233,7 @@ export async function registerRoutes(
   });
 
   app.patch(api.posts.update.path, async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
@@ -260,7 +250,7 @@ export async function registerRoutes(
   });
 
   app.delete(api.posts.delete.path, async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
     const success = await storage.deletePost(id);
@@ -294,7 +284,7 @@ export async function registerRoutes(
   });
 
   app.get("/api/admin/popups", async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     try {
       const list = await storage.getPopups();
       res.json(list);
@@ -304,7 +294,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/admin/popups", async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     try {
       const popup = await storage.createPopup(req.body);
       res.status(201).json(popup);
@@ -314,7 +304,7 @@ export async function registerRoutes(
   });
 
   app.patch("/api/admin/popups/:id", async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
     try {
@@ -327,7 +317,7 @@ export async function registerRoutes(
   });
 
   app.delete("/api/admin/popups/:id", async (req, res) => {
-    if (!checkAdminPassword(req, res)) return;
+    if (!(await ensureAuth(req, res))) return;
     const id = parseInt(req.params.id);
     if (isNaN(id)) return res.status(400).json({ message: "Invalid ID" });
     const ok = await storage.deletePopup(id);

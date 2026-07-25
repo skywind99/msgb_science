@@ -8,26 +8,26 @@ import { z } from "zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { contentBlockSchema, type ContentBlock } from "@shared/schema";
-import { useAdminPassword } from "@/contexts/admin";
+import { useAuthHeaders } from "@/contexts/admin";
 
 type FormValues = z.infer<typeof api.posts.create.input>;
 
-// 관리자 비밀번호를 context에서 가져오기
-function useAdminPw() {
+// 인증 헤더를 context에서 가져오기
+function useAdminPw(): Record<string, string> {
   try {
-    return useAdminPassword();
+    return useAuthHeaders();
   } catch {
-    return "";
+    return {};
   }
 }
 
 // 이미지 업로드 (파일 → Storage → URL)
-async function uploadImageFile(file: File, adminPassword: string): Promise<string | null> {
+async function uploadImageFile(file: File, authHeaders: Record<string, string>): Promise<string | null> {
   const res = await fetch("/api/upload-image", {
     method: "POST",
     headers: {
       "Content-Type": file.type,
-      "x-admin-password": adminPassword,
+      ...authHeaders,
     },
     body: file,
   });
@@ -37,13 +37,13 @@ async function uploadImageFile(file: File, adminPassword: string): Promise<strin
 }
 
 // 외부 URL → Storage 미러링
-async function mirrorImage(url: string, adminPassword: string): Promise<string> {
+async function mirrorImage(url: string, authHeaders: Record<string, string>): Promise<string> {
   try {
     const res = await fetch("/api/mirror-image", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-admin-password": adminPassword,
+        ...authHeaders,
       },
       body: JSON.stringify({ url }),
     });
@@ -58,12 +58,12 @@ async function mirrorImage(url: string, adminPassword: string): Promise<string> 
 interface ImageInputProps {
   value: string;
   onChange: (url: string) => void;
-  adminPassword: string;
+  authHeaders: Record<string, string>;
   label?: string;
   placeholder?: string;
 }
 
-function ImageInput({ value, onChange, adminPassword, label, placeholder }: ImageInputProps) {
+function ImageInput({ value, onChange, authHeaders, label, placeholder }: ImageInputProps) {
   const [mode, setMode] = useState<"url" | "file">("file");
   const [uploading, setUploading] = useState(false);
   const [mirroring, setMirroring] = useState(false);
@@ -75,7 +75,7 @@ function ImageInput({ value, onChange, adminPassword, label, placeholder }: Imag
     if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadImageFile(file, adminPassword);
+      const url = await uploadImageFile(file, authHeaders);
       if (url) {
         onChange(url);
         toast({ title: "이미지 업로드 완료" });
@@ -92,7 +92,7 @@ function ImageInput({ value, onChange, adminPassword, label, placeholder }: Imag
     if (!value || !/^https?:\/\//i.test(value)) return;
     setMirroring(true);
     try {
-      const mirrored = await mirrorImage(value, adminPassword);
+      const mirrored = await mirrorImage(value, authHeaders);
       onChange(mirrored);
       if (mirrored !== value) toast({ title: "이미지가 서버에 저장되었습니다." });
     } finally {
@@ -211,11 +211,11 @@ function ImageInput({ value, onChange, adminPassword, label, placeholder }: Imag
 function BlockEditor({
   blocks,
   onChange,
-  adminPassword,
+  authHeaders,
 }: {
   blocks: ContentBlock[];
   onChange: (blocks: ContentBlock[]) => void;
-  adminPassword: string;
+  authHeaders: Record<string, string>;
 }) {
   const addBlock = () => onChange([...blocks, { imageUrl: "", content: "" }]);
   const removeBlock = (idx: number) => onChange(blocks.filter((_, i) => i !== idx));
@@ -239,7 +239,7 @@ function BlockEditor({
           <ImageInput
             value={block.imageUrl ?? ""}
             onChange={(url) => updateBlock(idx, "imageUrl", url)}
-            adminPassword={adminPassword}
+            authHeaders={authHeaders}
             label="🖼️ 이미지"
             placeholder="이미지 URL 또는 파일 업로드"
           />
@@ -296,7 +296,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const createPost = useCreatePost();
   const { toast } = useToast();
-  const adminPassword = useAdminPw();
+  const authHeaders = useAdminPw();
 
   const form = useForm<FormValues>({
     resolver: zodResolver(api.posts.create.input),
@@ -415,7 +415,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                     <ImageInput
                       value={thumbnailUrl}
                       onChange={setThumbnailUrl}
-                      adminPassword={adminPassword}
+                      authHeaders={authHeaders}
                       placeholder="https://example.com/thumbnail.jpg"
                     />
                   </div>
@@ -426,7 +426,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                       본문 블록
                       <span className="ml-1.5 text-xs font-normal text-muted-foreground">(이미지와 내용을 자유롭게 조합)</span>
                     </label>
-                    <BlockEditor blocks={blocks} onChange={setBlocks} adminPassword={adminPassword} />
+                    <BlockEditor blocks={blocks} onChange={setBlocks} authHeaders={authHeaders} />
                   </div>
                 </form>
               </div>

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Eye, EyeOff, Settings, ChevronLeft, Upload, Loader2 } from "lucide-react";
 import type { Popup } from "@shared/schema";
-import { useAdmin } from "@/contexts/admin";
+import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 import { PopupDisplay } from "@/components/PopupDisplay";
 
@@ -31,12 +31,12 @@ export function PopupManager() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [previewPopup, setPreviewPopup] = useState<Popup | null>(null);
-  const { password } = useAdmin();
+  const headers = useAuthHeaders();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const authHeaders = { "Content-Type": "application/json", "x-admin-password": password };
+  const authHeaders = { "Content-Type": "application/json", ...headers };
 
   const load = async () => {
     try {
@@ -70,7 +70,7 @@ export function PopupManager() {
     try {
       const res = await fetch("/api/upload-image", {
         method: "POST",
-        headers: { "Content-Type": file.type, "x-admin-password": password },
+        headers: { "Content-Type": file.type, ...headers },
         body: file,
       });
       if (res.ok) {

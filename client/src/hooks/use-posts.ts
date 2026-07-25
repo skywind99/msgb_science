@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type PostInput } from "@shared/routes";
-import { useAdmin } from "@/contexts/admin";
+import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 
 // GET /api/posts
 export function usePosts(category?: string) {
@@ -38,7 +38,7 @@ export function usePost(id: number) {
 // POST /api/posts
 export function useCreatePost() {
   const queryClient = useQueryClient();
-  const { password } = useAdmin();
+  const authHeaders = useAuthHeaders();
 
   return useMutation({
     mutationFn: async (data: PostInput) => {
@@ -47,7 +47,7 @@ export function useCreatePost() {
         method: api.posts.create.method,
         headers: {
           "Content-Type": "application/json",
-          "x-admin-password": password,
+          ...authHeaders,
         },
         body: JSON.stringify(validated),
         credentials: "include",
