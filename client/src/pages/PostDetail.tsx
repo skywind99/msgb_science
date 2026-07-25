@@ -103,7 +103,7 @@ function BlockImageInput({
           placeholder="https://example.com/image.jpg" className="text-sm" />
       )}
       {value && /^https?:\/\//.test(value) && (
-        <img src={value} alt="" className="w-full h-28 object-cover rounded-lg border border-border"
+        <img src={value} alt="" className="w-full h-28 object-contain bg-muted rounded-lg border border-border"
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
       )}
     </div>
@@ -381,11 +381,12 @@ export default function PostDetail() {
       {/* 대표 이미지 */}
       {post.imageUrl && (
         <div className="max-w-3xl mx-auto px-4 pt-8">
+          {/* 세로로 긴 안내문·포스터가 잘리지 않도록 원본 비율로 전체를 보여준다 */}
           <div className="rounded-2xl overflow-hidden border border-border shadow-md">
             <img
               src={post.imageUrl}
               alt={post.title}
-              className="w-full object-cover max-h-[480px]"
+              className="w-full h-auto"
               onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           </div>
@@ -409,7 +410,7 @@ export default function PostDetail() {
                     <img
                       src={imgSrc}
                       alt=""
-                      className="w-full object-cover max-h-[500px]"
+                      className="w-full h-auto"
                       data-testid={`img-block-${idx}`}
                     />
                   </div>

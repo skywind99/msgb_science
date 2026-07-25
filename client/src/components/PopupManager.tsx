@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Eye, EyeOff, Settings, ChevronLeft, Upload, Loader2 } from "lucide-react";
 import type { Popup } from "@shared/schema";
-import { useAdmin, useAuthHeaders } from "@/contexts/admin";
+import { useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 import { PopupDisplay } from "@/components/PopupDisplay";
 
@@ -250,7 +250,7 @@ export function PopupManager() {
                   placeholder="또는 이미지 URL 직접 입력"
                   className="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:border-blue-500" />
                 {form.imageUrl && (
-                  <img src={form.imageUrl} alt="" className="w-full h-24 object-cover rounded-xl border"
+                  <img src={form.imageUrl} alt="" className="w-full h-24 object-contain bg-muted rounded-xl border"
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                 )}
               </div>

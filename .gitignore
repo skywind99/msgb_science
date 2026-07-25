@@ -3,3 +3,6 @@ dist/
 .env
 .env.local
 *.tsbuildinfo
+
+# Claude Code 로컬 설정 (사용자별 권한 허용 목록)
+.claude/settings.local.json

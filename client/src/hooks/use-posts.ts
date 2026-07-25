@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, buildUrl, type PostInput } from "@shared/routes";
-import { useAdmin, useAuthHeaders } from "@/contexts/admin";
+import { useAuthHeaders } from "@/contexts/admin";
 
 // GET /api/posts
 export function usePosts(category?: string) {

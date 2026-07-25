@@ -194,7 +194,7 @@ function ImageInput({ value, onChange, authHeaders, label, placeholder }: ImageI
           <img
             src={value}
             alt="미리보기"
-            className="w-full h-40 object-cover rounded-lg border border-border"
+            className="w-full h-40 object-contain bg-muted rounded-lg border border-border"
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
           {value.includes("supabase") && (
