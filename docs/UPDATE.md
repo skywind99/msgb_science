@@ -32,8 +32,9 @@
   그대로 쓸 수 있고, 창 아래 링크로 전환한다. 교사 계정으로 들어오면 이름이 표시된다.
   (계정 발급 준비가 끝나기 전까지는 기존 방식만 동작한다.)
 - `docs/` 디렉터리 신설 — TODO, UPDATE, DEVLOG 문서화 체계 도입
-- `.env.example` 추가. 필요한 환경변수는 `DATABASE_URL`, `SUPABASE_URL`,
-  `SUPABASE_SERVICE_KEY`, `ADMIN_PASSWORD` 네 개.
+- `.env.example` 추가. 서버가 쓰는 값은 `DATABASE_URL`, `SUPABASE_URL`,
+  `SUPABASE_SERVICE_KEY`, `ADMIN_PASSWORD` 네 개이고, 교사 로그인을 위해
+  브라우저용 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 두 개가 더 필요하다.
 - 활동 신청 게시판용 DB 스키마 (`profiles`, `invites`, `applications`).
   아직 이 테이블을 쓰는 화면·API 가 없어 동작 변화는 없다.
 
@@ -44,9 +45,18 @@
 
 ### 운영 메모
 - Vercel 환경변수를 바꾼 뒤에는 **재배포를 해야 적용된다.** 기존 배포에는 반영되지 않는다.
+  같은 이유로 로컬에서 `.env` 를 고쳤으면 dev 서버를 재시작해야 한다.
+- 관리자 비밀번호는 환경마다 별개다. 로컬은 `.env`, 배포는 Vercel 환경변수를 본다.
+  서로 달라도 문제없다.
+- 교사 로그인을 배포에서 쓰려면 Vercel 에 `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_ANON_KEY` 를 추가해야 한다. 없으면 로그인 창에 이메일 항목이
+  나타나지 않고 기존 방식만 동작한다.
+- 업로드 가능한 이미지 크기는 약 4MB 다. Vercel 함수의 요청 본문 한계가 4.5MB 라
+  그보다 큰 사진은 서버에 닿지 못한다.
 
 ### 예정
-- 관리자 세션 토큰 인증으로 전환 (TODO P0)
+- 교사 초대 링크 발급 흐름, 이후 기존 관리자 비밀번호 인증 제거 (TODO 1단계)
+- 이미지 업로드 시점을 저장 직전으로 변경 — 취소한 사진이 서버에 남지 않게
 - 팝업 API 입력 검증 추가 (TODO P0)
 - 시드 로직 요청 경로에서 분리 (TODO P1)
 

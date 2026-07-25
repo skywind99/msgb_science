@@ -38,6 +38,8 @@
 - [x] Supabase Auth 로그인 추가 (`server/auth.ts`, `client/src/lib/supabase.ts`)
 - [ ] Supabase 대시보드 설정 — Email 활성화, "Allow new users to sign up" 끄기, 첫 계정 생성
 - [ ] `profiles` 행 삽입 (첫 계정을 `role='admin'` 으로)
+- [ ] **Vercel 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가** — 빌드 타임 변수라
+      없으면 배포본에서 교사 로그인이 아예 나타나지 않는다. 추가 후 재배포 필요.
 - [ ] 기존 `x-admin-password` 헤더 인증 전면 제거
   - `client/src/contexts/admin.tsx` — localStorage 평문 비밀번호 저장 폐기
   - `server/routes.ts` — `checkAdminPassword` 를 토큰 검증 미들웨어로 교체
@@ -107,6 +109,21 @@
 ---
 
 ## 기존 과제 (계속 유효)
+
+### 이미지 · Storage
+- [ ] **업로드 시점을 저장 직전으로 변경** — 지금은 파일을 고르는 즉시 업로드해서
+      미리보기를 만든다. 취소하거나 다른 사진으로 바꾸면 그 파일이 버킷에 남는다.
+      `createObjectURL` 로 로컬 미리보기를 만들고, 글을 저장할 때만 업로드한다.
+- [ ] `post-images/` 미참조 파일 4개 삭제 (약 542KB)
+- [ ] 업로드 전 클라이언트 리사이즈 (긴 변 1600px 정도) — Vercel 함수의 요청 본문
+      한계가 4.5MB 라 스마트폰 사진이 그대로는 실패한다. 측정 결과 4MB 는 성공,
+      4.4MB 부터 413 `FUNCTION_PAYLOAD_TOO_LARGE`.
+- [ ] 413 응답일 때 "이미지가 너무 큽니다" 안내 표시 (현재는 실패 이유가 안 보임)
+
+메모
+- Supabase Storage 에는 자동 만료가 없다. 지우지 않으면 영구히 남는다.
+- `scraped/` 는 뉴스 이미지 미러링 캐시다. URL 이 DB 에 없어 미참조로 잡히지만
+  쓰레기가 아니다. 정리 대상에서 제외할 것.
 
 ### 안정성
 - [ ] 시드 로직을 `registerRoutes()` 밖으로 분리 → `script/seed.ts`
