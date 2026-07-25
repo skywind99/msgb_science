@@ -145,11 +145,13 @@ export async function registerRoutes(
 
       const ext = contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
       const filename = `post-images/${Date.now()}.${ext}`;
-      const publicUrl = await uploadBufferToStorage(body, filename, contentType);
-      if (!publicUrl) {
-        return res.status(500).json({ message: "Storage 업로드 실패. SUPABASE 환경변수를 확인하세요." });
+      const result = await uploadBufferToStorage(body, filename, contentType);
+      if (!result.ok) {
+        // 실제 원인은 서버 로그에만 남기고, 응답에는 정리된 문구를 보낸다
+        console.error("[upload-image]", result.reason);
+        return res.status(500).json({ message: result.userMessage });
       }
-      return res.json({ url: publicUrl });
+      return res.json({ url: result.url });
     } catch (err) {
       console.error("upload-image error:", err);
       res.status(500).json({ message: "업로드 중 오류가 발생했습니다." });
@@ -164,13 +166,14 @@ export async function registerRoutes(
       return res.status(401).json({ message: "Unauthorized" });
     }
     try {
-      const { createClient } = await import("@supabase/supabase-js");
+      // createSupabaseClient를 써야 한다. 직접 createClient를 부르면 Node 20에서
+      // native WebSocket이 없어 예외가 난다 (imageUpload.ts 주석 참고).
+      const { createSupabaseClient, BUCKET } = await import("./imageUpload.js");
       const url = process.env.SUPABASE_URL;
       const key = process.env.SUPABASE_SERVICE_KEY;
       if (!url || !key) return res.json({ used: 0, total: 1024 * 1024 * 1024 });
 
-      const supabase = createClient(url, key);
-      const BUCKET = "news-images";
+      const supabase = createSupabaseClient(url, key);
       const TOTAL = 1024 * 1024 * 1024; // Supabase 무료 1GB
 
       let totalSize = 0;

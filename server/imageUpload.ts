@@ -1,14 +1,39 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import ws from "ws";
 
 declare const process: { env: Record<string, string | undefined> };
 
-const BUCKET = "news-images";
+export const BUCKET = "news-images";
 
-function getSupabase() {
+/**
+ * Supabase 클라이언트 생성.
+ *
+ * supabase-js 2.109+ 는 클라이언트를 만들 때 RealtimeClient를 초기화하는데,
+ * 여기에 native WebSocket 전역이 필요하다. Node 22부터 제공되므로 Node 20에서는
+ * "Node.js 20 detected without native WebSocket support" 예외가 난다.
+ * Storage만 쓰더라도 생성 단계에서 막히기 때문에 ws를 트랜스포트로 넘긴다.
+ * (Node 22+ 에서도 그대로 동작한다.)
+ */
+export function createSupabaseClient(url: string, key: string): SupabaseClient {
+  return createClient(url, key, {
+    realtime: { transport: ws as unknown as never },
+  });
+}
+
+function getSupabase(): SupabaseClient | null {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY; // service_role key (서버 전용)
   if (!url || !key) return null;
-  return createClient(url, key);
+  try {
+    return createSupabaseClient(url, key);
+  } catch (err) {
+    console.error("[imageUpload] Supabase 클라이언트 생성 실패:", err);
+    return null;
+  }
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 /**
@@ -72,15 +97,43 @@ export async function mirrorImageToStorage(
  * 클라이언트에서 올린 raw 바이트 → Supabase Storage 업로드
  * `fieldname` 예: "post-images/1719123456789.jpg"
  */
+export type UploadResult =
+  | { ok: true; url: string }
+  /** reason: 서버 로그용 상세 원인 / userMessage: 관리자에게 보여줄 문구 */
+  | { ok: false; reason: string; userMessage: string };
+
 export async function uploadBufferToStorage(
   buffer: Buffer,
   filename: string,
   contentType: string
-): Promise<string | null> {
-  try {
-    const supabase = getSupabase();
-    if (!supabase) return null;
+): Promise<UploadResult> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) {
+    const missing = [
+      !url && "SUPABASE_URL",
+      !key && "SUPABASE_SERVICE_KEY",
+    ].filter(Boolean).join(", ");
+    return {
+      ok: false,
+      reason: `환경변수 미설정: ${missing}`,
+      userMessage: `Storage 설정이 없습니다. 서버 환경변수(${missing})를 확인하세요.`,
+    };
+  }
 
+  let supabase: SupabaseClient;
+  try {
+    supabase = createSupabaseClient(url, key);
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `Supabase 클라이언트 생성 실패: ${errText(err)}`,
+      userMessage:
+        "Storage 클라이언트 초기화에 실패했습니다. 서버 로그를 확인하세요.",
+    };
+  }
+
+  try {
     const { error } = await supabase.storage
       .from(BUCKET)
       .upload(filename, new Blob([buffer], { type: contentType }), {
@@ -89,14 +142,20 @@ export async function uploadBufferToStorage(
       });
 
     if (error) {
-      console.error("[imageUpload] upload error:", error.message);
-      return null;
+      return {
+        ok: false,
+        reason: `Storage 업로드 거부 (버킷 ${BUCKET}): ${error.message}`,
+        userMessage: `업로드에 실패했습니다: ${error.message}`,
+      };
     }
 
     const { data } = supabase.storage.from(BUCKET).getPublicUrl(filename);
-    return data.publicUrl;
+    return { ok: true, url: data.publicUrl };
   } catch (err) {
-    console.error("[imageUpload] uploadBuffer failed:", err);
-    return null;
+    return {
+      ok: false,
+      reason: `Storage 업로드 중 예외: ${errText(err)}`,
+      userMessage: "업로드 중 오류가 발생했습니다. 서버 로그를 확인하세요.",
+    };
   }
 }
