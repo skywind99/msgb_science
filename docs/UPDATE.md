@@ -16,8 +16,27 @@
 
 ## [Unreleased]
 
+### 수정
+- 관리자 이미지 업로드가 항상 실패하던 문제 수정. `@supabase/supabase-js` 가
+  Node 20 에서 클라이언트 생성 단계부터 예외를 던지던 것이 원인.
+  Storage 사용량 조회에도 같은 문제가 있어 함께 고쳤다.
+- 업로드 실패 메시지가 원인과 무관하게 항상 "SUPABASE 환경변수를 확인하세요" 로
+  나오던 문제 수정. 이제 환경변수 누락과 실제 업로드 실패가 구분된다.
+
 ### 추가
 - `docs/` 디렉터리 신설 — TODO, UPDATE, DEVLOG 문서화 체계 도입
+- `.env.example` 추가. 필요한 환경변수는 `DATABASE_URL`, `SUPABASE_URL`,
+  `SUPABASE_SERVICE_KEY`, `ADMIN_PASSWORD` 네 개.
+- 활동 신청 게시판용 DB 스키마 (`profiles`, `invites`, `applications`).
+  아직 이 테이블을 쓰는 화면·API 가 없어 동작 변화는 없다.
+
+### 변경
+- 실행 환경을 Node 22 이상으로 지정 (`engines.node`). 배포는 24.x 로 동작한다.
+- `npm run dev` 가 Windows PowerShell 에서 동작하도록 수정.
+- `.env` 파일을 자동으로 읽는다. 이전에는 셸에서 직접 지정해야 했다.
+
+### 운영 메모
+- Vercel 환경변수를 바꾼 뒤에는 **재배포를 해야 적용된다.** 기존 배포에는 반영되지 않는다.
 
 ### 예정
 - 관리자 세션 토큰 인증으로 전환 (TODO P0)

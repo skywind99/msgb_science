@@ -10,6 +10,68 @@
 
 ---
 
+## 2026-07-25 — 환경변수 로딩 정리, Supabase 업로드 500 원인 추적
+
+### 한 일
+- `dotenv`, `cross-env` 를 devDependencies 로 추가
+  - `server/index.ts` 와 `drizzle.config.ts` 양쪽 최상단에 `import "dotenv/config"`.
+    drizzle-kit 은 별도 프로세스로 돌기 때문에 한쪽만 넣으면 `db:push` 가 환경변수를 못 읽는다.
+  - `dev` 스크립트가 `NODE_ENV=... tsx` 형태라 PowerShell 에서 실행 자체가 안 됐다. `cross-env` 로 교체.
+- `.env.example` 신설. 코드가 실제로 읽는 변수는 `DATABASE_URL`, `SUPABASE_URL`,
+  `SUPABASE_SERVICE_KEY`, `ADMIN_PASSWORD` 네 개뿐이다.
+  `NODE_ENV`, `PORT`, `REPL_ID` 는 플랫폼이 설정하므로 주석 처리해 뒀다.
+- 이미지 업로드가 500 나던 문제 수정 (아래 참조)
+- `package-lock.json` 재생성, `engines.node` 지정
+
+### 이미지 업로드 500 — 원인은 환경변수가 아니었다
+증상은 `POST /api/upload-image 500 ... "Storage 업로드 실패. SUPABASE 환경변수를 확인하세요."`
+그런데 환경변수는 처음부터 정상이었다. 응답이 6ms 였던 게 단서였다 —
+Supabase 로 네트워크 요청이 아예 나가지 않았다는 뜻이다.
+
+실제 원인은 `@supabase/supabase-js` 2.109 가 `createClient` 단계에서 RealtimeClient 를
+초기화하면서 native WebSocket 전역을 요구하는 것. Node 22 부터 제공되므로 Node 20 에서는
+예외가 났다. Storage 만 써도 클라이언트 생성에서 막힌다.
+`realtime.transport` 로 `ws` 를 넘겨 해결. `ws` 는 이미 의존성이고 번들 allowlist 에도 있었다.
+
+Node 22 로 올리면 `ws` 없이도 되지만 그대로 두기로 했다. Node 20/22/24 어디서든
+동작해서 런타임이 바뀌어도 다시 볼 일이 없고, 잃는 것도 없다 (Realtime 자체를 안 쓴다).
+
+### 왜 락파일이 문제였나
+`package.json` 에는 `@supabase/supabase-js: ^2.108.2` 가 있는데
+커밋된 `package-lock.json` 에는 그 항목이 아예 없었다.
+그래서 새로 `npm install` 할 때마다 범위 내 최신으로 해석돼 2.109.0 이 들어왔다.
+로컬(Node 20)에서만 터지고 배포(Node 24)에서는 안 터지던 이유가 이것이다.
+
+### 삽질 기록
+- 에러 메시지가 "SUPABASE 환경변수를 확인하세요" 라고 단정해서 환경변수를 한참 뒤졌다.
+  실패 원인이 무엇이든 같은 문구를 반환하는 구조였다.
+  `uploadBufferToStorage` 가 `null` 대신 `UploadResult` 를 반환하도록 바꿔
+  환경변수 누락 / 클라이언트 생성 실패 / 업로드 거부를 구분한다.
+  상세 원인은 서버 로그에만 남기고 응답에는 정리된 문구를 보낸다.
+- `/api/storage-usage` 도 직접 `createClient` 를 부르고 있어 같은 버그가 있었다.
+  공용 `createSupabaseClient` 헬퍼로 통일하고 중복 선언된 `BUCKET` 도 한 곳에서 export.
+
+### 배포 후 겪은 것
+푸시 후 `/api/posts`, `/api/popups` 가 500. `/api/science-news`(DB 미사용)는 200 이라
+함수·번들 문제는 아니고 DB 접근만 실패하는 상황이었다.
+원인은 Vercel 환경변수의 `DATABASE_URL`·`ADMIN_PASSWORD` 가 새 Supabase 프로젝트와
+맞지 않았던 것. **환경변수 변경은 기존 배포에 적용되지 않는다** — 새 배포가 필요하다.
+
+### 메모
+- `engines.node` 는 `">=22"` 로 뒀다. Vercel 은 열린 범위를 사용 가능한 최신 버전으로
+  해석하므로 현재 24.x 로 배포된다. `"24.x"` 로 못박으면 나중에 손으로 고쳐야 한다.
+- `engines.node` 가 대시보드의 Node.js Version 설정을 덮어쓴다. 대시보드는 안 만져도 된다.
+- Node.js Version 설정 위치는 Settings → **Build and Deployment** (General 아님).
+- 로컬 Node 가 아직 20.18.0 이다. `vite@7.3.0` 이 `^20.19.0 || >=22.12.0` 을 요구하므로
+  개발 서버가 불안정할 수 있다. 24 로 올리는 게 좋다.
+
+### 다음
+- [ ] 로컬 Node 24 로 업그레이드
+- [ ] Supabase 리전 확인 (이전 항목에서 미해결)
+- [ ] 1단계 착수: Supabase Auth 도입 + `x-admin-password` 제거
+
+---
+
 ## 2026-07-25 — 활동 신청 게시판 설계 결정
 
 ### 결정한 것
