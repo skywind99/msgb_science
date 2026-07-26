@@ -2,7 +2,7 @@
 
 미사강변고 과학중점고 사이트 과제 목록.
 
-최종 수정: 2026-07-26
+최종 수정: 2026-07-27
 
 ---
 
@@ -50,7 +50,7 @@
 
 ---
 
-## 2단계 — 활동 게시물
+## 2단계 — 활동 게시물 (2026-07-27 배포 완료)
 
 - [x] `posts` 테이블 확장 — `shared/schema.ts` 적용 후 `npm run db:push`
   - `applyEnabled`, `eventStart`, `eventEnd`, `location`, `capacity`
