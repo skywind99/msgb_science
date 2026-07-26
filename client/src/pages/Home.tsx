@@ -4,6 +4,7 @@ import { ArrowRight, BookOpen, FlaskConical, Users, Globe, ExternalLink, Chevron
 import { usePosts } from "@/hooks/use-posts";
 import { PostCard, PostCardSkeleton } from "@/components/PostCard";
 import { CreatePostDialog } from "@/components/CreatePostDialog";
+import { UpcomingActivities } from "@/components/UpcomingActivities";
 import { useAdmin } from "@/contexts/admin";
 import { useEffect, useState, useCallback } from "react";
 
@@ -274,6 +275,9 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* 신청 마감 임박 활동 — 없으면 스스로 사라진다 */}
+      <UpcomingActivities />
 
       {/* Features Grid */}
       <section className="py-20 bg-white">

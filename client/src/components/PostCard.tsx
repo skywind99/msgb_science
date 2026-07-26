@@ -1,8 +1,9 @@
 import React from "react";
-import { type Post, type ContentBlock } from "@shared/schema";
+import { type PublicPost, type ContentBlock } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
-import { Calendar, ChevronRight, Microscope, FlaskConical, BookOpen, Rocket, Users, Globe } from "lucide-react";
+import { Calendar, ChevronRight, Microscope, FlaskConical, BookOpen, Rocket, Users, Globe, CalendarClock } from "lucide-react";
+import { activityStage } from "@/components/ActivityInfo";
 
 const CATEGORY_META: Record<string, { icon: React.ReactNode; from: string; to: string }> = {
   home:             { icon: <Microscope className="w-14 h-14 text-white/80" />, from: "from-blue-500",    to: "to-indigo-600" },
@@ -21,8 +22,16 @@ const isImageUrl = (str?: string | null): str is string => {
   );
 };
 
+// 목록 카드에 붙는 활동 배지. 일반 공지에는 아무것도 붙지 않는다.
+const STAGE_BADGE: Record<string, { label: string; className: string }> = {
+  before: { label: "신청 예정", className: "bg-amber-500/90 text-white" },
+  open: { label: "신청 받는 중", className: "bg-emerald-500/90 text-white" },
+  closed: { label: "신청 마감", className: "bg-black/60 text-white" },
+  ended: { label: "종료", className: "bg-black/50 text-white" },
+};
+
 interface Props {
-  post: Post;
+  post: PublicPost;
 }
 
 export function PostCard({ post }: Props) {
@@ -30,6 +39,7 @@ export function PostCard({ post }: Props) {
   const firstBlockImg = blocks?.map(b => isImageUrl(b.imageUrl) ? b.imageUrl : isImageUrl(b.content) ? b.content : null).find(Boolean) ?? null;
   const thumbnail = post.imageUrl || firstBlockImg || null;
   const categoryMeta = CATEGORY_META[post.category];
+  const badge = post.applyEnabled ? STAGE_BADGE[activityStage(post)] : null;
 
   return (
     <Link href={`/posts/${post.id}`} className="group bg-card rounded-2xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-300 flex flex-col h-full cursor-pointer" data-testid={`card-post-${post.id}`}>
@@ -48,13 +58,27 @@ export function PostCard({ post }: Props) {
             {categoryMeta?.icon}
           </div>
         )}
+        {badge && (
+          <span className={`absolute top-3 left-3 px-2.5 py-1 rounded-full text-xs font-bold shadow ${badge.className}`}>
+            {badge.label}
+          </span>
+        )}
       </div>
-      
+
       <div className="p-6 flex flex-col flex-grow">
         <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-3">
           <Calendar className="w-4 h-4" />
           {post.createdAt ? format(new Date(post.createdAt), "yyyy. MM. dd") : "최근"}
         </div>
+
+        {/* 활동 글이면 등록일보다 활동 일시가 중요하다 */}
+        {post.applyEnabled && post.eventStart && (
+          <div className="flex items-center gap-2 text-xs font-bold text-primary mb-3">
+            <CalendarClock className="w-4 h-4" />
+            {format(new Date(post.eventStart), "M월 d일 HH:mm")}
+            {post.location && <span className="font-medium text-muted-foreground">· {post.location}</span>}
+          </div>
+        )}
         
         <h3 className="text-xl font-bold text-foreground mb-3 line-clamp-2 leading-tight group-hover:text-primary transition-colors">
           {post.title}

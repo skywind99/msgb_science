@@ -2,7 +2,7 @@
 
 미사강변고 과학중점고 사이트 과제 목록.
 
-최종 수정: 2026-07-25
+최종 수정: 2026-07-26
 
 ---
 
@@ -55,10 +55,14 @@
 - [x] `posts` 테이블 확장 — `shared/schema.ts` 적용 후 `npm run db:push`
   - `applyEnabled`, `eventStart`, `eventEnd`, `location`, `capacity`
   - `applyStart`, `applyDeadline`, `applyNote`, `applyPasswordHash`, `allowWaitlist`, `authorId`
-- [ ] 교사용 활동 등록 폼 — `CreatePostDialog.tsx` 에 "신청 받기" 토글 및 접이식 활동 정보 영역 추가
-- [ ] 게시물 상세에 활동 정보 표시 (일시·장소·정원·마감·남은 자리)
-- [ ] 홈 상단에 **신청 마감 임박 활동** 노출
-- [ ] 활동 목록을 날짜순으로 보는 일정 화면
+- [x] 교사용 활동 등록 폼 — `ActivityFields.tsx` 를 글쓰기·수정 양쪽에서 공용으로 쓴다
+- [x] 게시물 상세에 활동 정보 표시 (일시·장소·정원·마감)
+      → **남은 자리는 아직 없다.** 3단계의 `ApplicationSummary` 집계 API 가 있어야 한다.
+- [x] 홈 상단에 **신청 마감 임박 활동** 노출 (`UpcomingActivities.tsx`, 최대 3건)
+- [x] 활동 목록을 날짜순으로 보는 일정 화면 (`/schedule`, `Schedule.tsx`)
+- [x] 게시물 API 응답에서 `applyPasswordHash` 제거 (`toPublicPost`) — 공개 API 였다
+- [ ] 상세 페이지 "남은 자리" 표시 — 3단계 집계 API 완성 후
+- [ ] 상단 메뉴가 7개로 늘어 데스크톱에서 빡빡하다. 좁아지면 드롭다운으로 묶기
 
 ---
 
@@ -68,7 +72,8 @@
 - [ ] `POST /api/posts/:id/apply` — 신청 접수
   - 마감·정원 확인, 정원 초과 시 `allowWaitlist` 에 따라 대기자 등록
   - 6자리 확인코드 생성 → 해시 저장 → 평문은 응답에 한 번만 반환
-  - `applyPasswordHash` 가 있으면 대조
+  - `applyPasswordHash` 가 있으면 대조 — `server/applyPassword.ts` 의
+    `verifyApplyPassword` 가 이미 있다. 호출부만 만들면 된다.
   - 유니크 제약 위반 시 "이미 신청한 활동입니다" 안내
 - [ ] `POST /api/applications/lookup` — 학년·반·번호 + 코드로 본인 신청 조회·취소
 - [ ] **조회·신청 API 요청 제한** — 6자리 코드 무차별 대입 방지. IP 기준 분당 제한 + 실패 누적 시 잠금

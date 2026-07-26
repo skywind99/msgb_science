@@ -8,6 +8,7 @@ import { PopupManager } from "@/components/PopupManager";
 
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
+  { id: "schedule", label: "활동 일정", path: "/schedule" },
   { id: "lab_intro", label: "과학실 소개", path: "/lab" },
   { id: "science_class", label: "과학중점반활동", path: "/class" },
   { id: "career_program", label: "창의융합진로프로그램", path: "/career" },

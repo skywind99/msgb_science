@@ -10,6 +10,79 @@
 
 ---
 
+## 2026-07-26 — 2단계: 활동 게시물
+
+### 한 일
+- `ActivityFields.tsx` 신설 — 활동 정보 입력. 글쓰기와 수정 화면이 같은 컴포넌트를 쓴다
+- `ActivityInfo.tsx` 신설 — 상세 페이지 활동 요약 + 신청 단계 계산(`activityStage`)
+- `UpcomingActivities.tsx` 신설 — 홈 마감 임박 3건
+- `Schedule.tsx` 신설 — `/schedule` 날짜순 활동 목록. 상단 메뉴에 추가
+- `PostCard` 에 활동 배지·일시·장소 추가
+- `server/applyPassword.ts` 신설 — 신청 비밀번호 해싱
+- 게시물 응답에서 `applyPasswordHash` 제거 (`toPublicPost`)
+
+### 날짜가 JSON 을 건너지 못하던 문제
+`insertPostSchema` 는 `createInsertSchema` 가 만든 것이라 timestamp 열이 `z.date()` 였다.
+그런데 브라우저가 `JSON.stringify` 하는 순간 Date 는 문자열이 되므로,
+활동 일시를 넣은 요청은 서버에서 전부 400 이 될 상태였다.
+
+`z.preprocess` + `z.coerce.date()` 로 감싸 문자열·Date 둘 다 받게 했다.
+빈 문자열을 `null` 로 먼저 바꾸는 것이 핵심이다. `datetime-local` 입력을 비우면
+`""` 가 오는데, `coerce.date("")` 는 Invalid Date 가 되어 "날짜 형식이 올바르지 않습니다" 로
+막힌다. 사용자는 그냥 입력을 안 한 것인데 에러가 나는 셈이다. 정원(`capacity`) 도 같다.
+
+시간대는 검증했다. `datetime-local` → `new Date()` (지역 시간 해석) → `toISOString()` (UTC)
+→ Drizzle `timestamp without time zone` 저장 → 읽을 때 UTC 로 해석.
+왕복해도 어긋나지 않는다. `05:00Z` 를 넣으면 화면에 `14:00` 으로 나온다.
+
+### 검증 스키마를 하나로 모은 이유
+`createPostSchema` 는 `.refine()` 체인이라 `.partial()` 을 붙일 수 없다 (ZodEffects 가 된다).
+그래서 `checkActivityDates()` 라는 함수로 refine 묶음을 빼내고,
+`insertPostSchema` → 생성용 / `.partial()` → 수정용에 각각 적용했다.
+refine 조건은 값이 없는 필드를 통과시키도록 썼기 때문에 부분 수정에도 그대로 쓸 수 있다.
+
+같은 스키마를 클라이언트에서도 저장 직전에 `safeParse` 로 한 번 돌린다.
+서버가 400 을 주기 전에 같은 문구를 토스트로 보여주기 위한 것이고, 규칙이 갈라지지 않는다.
+
+### 신청 비밀번호 해시가 공개로 새고 있었다
+`GET /api/posts` 는 `db.select()` 결과를 그대로 `res.json()` 하고 있었다.
+`applyPasswordHash` 열을 추가한 순간부터 로그인 없이 전교 활동의 해시를 긁을 수 있는 상태가 된다.
+신청 비밀번호는 교사가 학급에 구두로 알려주는 짧은 문자열이라 오프라인 대입이 현실적으로 가능하다.
+
+`toPublicPost()` 로 해시를 떼고 `hasApplyPassword` 불리언만 내려보낸다.
+게시물을 반환하는 네 경로(목록·상세·생성·수정) 전부 이 함수를 거친다.
+수정 화면에서 필요한 건 "설정돼 있는가" 하나라서 잃는 기능이 없다.
+
+해싱은 Node 내장 `scrypt` 를 썼다. bcrypt 를 새로 넣지 않았다 —
+네이티브 빌드가 서버리스 번들에서 문제를 만들 수 있고, 이 용도에는 과하다.
+
+### 비밀번호를 읽어올 수 없어서 생기는 문제
+수정 화면은 기존 비밀번호를 표시할 수 없다 (해시만 있으므로).
+그래서 "신청 비밀번호 사용" 토글과 입력란을 나눴다.
+- 토글 끔 → 빈 문자열을 보내 서버가 해시를 `null` 로 지운다
+- 토글 켬 + 입력 → 새 값으로 교체
+- 토글 켬 + 공백 → `applyPassword` 를 아예 보내지 않아 기존 값 유지
+
+서버의 `applyPassword === undefined` 분기가 이 세 경우를 가른다.
+
+### 안 한 것
+- **남은 자리 표시.** `ApplicationSummary` 집계 API 가 3단계에 있어서 지금은 정원만 보여준다.
+- **신청 버튼.** 상세 페이지에 "온라인 신청 기능은 준비 중" 안내만 넣었다.
+  `verifyApplyPassword` 는 만들어 뒀지만 아직 호출하는 곳이 없다.
+
+### 메모
+- 상단 메뉴 항목이 7개가 됐다. 라벨이 긴 편이라 데스크톱에서 빡빡하다. 좁아지면 정리 필요.
+- `NAV_ITEMS` 에 `schedule` 이 들어갔다. `CategoryPage` 가 여기서 라벨을 찾지만
+  `/schedule` 은 `CategoryPage` 를 쓰지 않으므로 영향 없다.
+- 수정 다이얼로그가 길어져서 본문 영역에 `max-h-[65vh]` 스크롤을 걸었다.
+
+### 다음
+- [ ] 3단계: `POST /api/posts/:id/apply` — 요청 제한을 같은 커밋에 넣을 것
+- [ ] 남은 자리 표시를 위한 집계 API
+- [ ] Vercel 환경변수 `VITE_SUPABASE_*` 추가 (1단계에서 계속 밀린 항목)
+
+---
+
 ## 2026-07-25 — 이미지 표시 수정, Storage 미참조 파일 조사
 
 ### 한 일

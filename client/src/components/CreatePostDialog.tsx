@@ -9,8 +9,23 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { contentBlockSchema, type ContentBlock } from "@shared/schema";
 import { useAuthHeaders } from "@/contexts/admin";
+import {
+  ActivityFields,
+  activityToPayload,
+  emptyActivity,
+  type ActivityDraft,
+} from "@/components/ActivityFields";
 
-type FormValues = z.infer<typeof api.posts.create.input>;
+// 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
+// 활동 정보의 앞뒤 관계 검사는 저장 직전에 서버와 같은 스키마로 한 번 더 돌린다.
+const formSchema = z.object({
+  category: z.string(),
+  title: z.string().trim().min(1, "제목을 입력해 주세요."),
+  content: z.string().optional(),
+  imageUrl: z.string().optional(),
+});
+
+type FormValues = z.infer<typeof formSchema>;
 
 // 인증 헤더를 context에서 가져오기
 function useAdminPw(): Record<string, string> {
@@ -294,12 +309,13 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [blocks, setBlocks] = useState<ContentBlock[]>([{ imageUrl: "", content: "" }]);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [activity, setActivity] = useState<ActivityDraft>(emptyActivity);
   const createPost = useCreatePost();
   const { toast } = useToast();
   const authHeaders = useAdminPw();
 
   const form = useForm<FormValues>({
-    resolver: zodResolver(api.posts.create.input),
+    resolver: zodResolver(formSchema),
     defaultValues: {
       category,
       title: "",
@@ -313,6 +329,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     form.reset({ category, title: "", content: "", imageUrl: "" });
     setBlocks([{ imageUrl: "", content: "" }]);
     setThumbnailUrl("");
+    setActivity(emptyActivity);
   };
 
   const onSubmit = (data: FormValues) => {
@@ -326,14 +343,28 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
 
     const firstText = cleanedBlocks.find((b) => b.content)?.content ?? "";
 
+    const payload = {
+      ...data,
+      category, // prop에서 직접 사용 (hidden input 무시)
+      imageUrl: thumbnailUrl || undefined,
+      content: firstText,
+      blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
+      ...activityToPayload(activity, "create"),
+    };
+
+    // 활동 일시·마감의 앞뒤 관계를 서버와 같은 규칙으로 미리 확인한다.
+    const checked = api.posts.create.input.safeParse(payload);
+    if (!checked.success) {
+      toast({
+        title: "입력을 확인해 주세요.",
+        description: checked.error.errors[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
+
     createPost.mutate(
-      {
-        ...data,
-        category, // prop에서 직접 사용 (hidden input 무시)
-        imageUrl: thumbnailUrl || undefined,
-        content: firstText,
-        blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
-      },
+      checked.data,
       {
         onSuccess: () => {
           toast({ title: "게시글이 등록되었습니다.", description: "성공적으로 저장되었습니다." });
@@ -427,6 +458,15 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                       <span className="ml-1.5 text-xs font-normal text-muted-foreground">(이미지와 내용을 자유롭게 조합)</span>
                     </label>
                     <BlockEditor blocks={blocks} onChange={setBlocks} authHeaders={authHeaders} />
+                  </div>
+
+                  {/* 활동 신청 */}
+                  <div className="space-y-2">
+                    <label className="text-sm font-semibold text-foreground">
+                      활동 신청
+                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(일반 공지라면 그대로 두세요)</span>
+                    </label>
+                    <ActivityFields value={activity} onChange={setActivity} />
                   </div>
                 </form>
               </div>

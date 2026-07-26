@@ -2,9 +2,11 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
+import { toPublicPost } from "../shared/schema.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, type AuthedRequest } from "./auth.js";
+import { hashApplyPassword } from "./applyPassword.js";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -98,10 +100,11 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // 게시물 응답은 반드시 toPublicPost 를 거친다. applyPasswordHash 를 밖으로 내보내지 않는다.
   app.get(api.posts.list.path, async (req, res) => {
     const category = req.query.category as string | undefined;
     const postsList = await storage.getPosts(category);
-    res.json(postsList);
+    res.json(postsList.map(toPublicPost));
   });
 
   app.get(api.posts.get.path, async (req, res) => {
@@ -109,7 +112,7 @@ export async function registerRoutes(
     if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
     const post = await storage.getPost(id);
     if (!post) return res.status(404).json({ message: "Post not found" });
-    res.json(post);
+    res.json(toPublicPost(post));
   });
 
   // ── 사이언스타임즈 최신 기사 목록 ────────────────────────
@@ -219,11 +222,17 @@ export async function registerRoutes(
   });
 
   app.post(api.posts.create.path, async (req, res) => {
-    if (!(await ensureAuth(req, res))) return;
+    const user = await ensureAuth(req, res);
+    if (!user) return;
     try {
-      const input = api.posts.create.input.parse(req.body);
-      const post = await storage.createPost(input);
-      res.status(201).json(post);
+      const { applyPassword, ...input } = api.posts.create.input.parse(req.body);
+      const post = await storage.createPost({
+        ...input,
+        // 기존 관리자 비밀번호로 들어온 경우엔 profiles 행이 없어 작성자를 남길 수 없다.
+        authorId: user.legacy ? null : user.id,
+        applyPasswordHash: applyPassword ? hashApplyPassword(applyPassword) : null,
+      });
+      res.status(201).json(toPublicPost(post));
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });
@@ -237,10 +246,16 @@ export async function registerRoutes(
     try {
       const id = parseInt(req.params.id);
       if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
-      const input = api.posts.update.input.parse(req.body);
-      const post = await storage.updatePost(id, input);
+      const { applyPassword, ...input } = api.posts.update.input.parse(req.body);
+      const post = await storage.updatePost(id, {
+        ...input,
+        // 값이 없으면 기존 비밀번호를 그대로 둔다. 빈 문자열은 "사용 안 함"이라는 뜻.
+        ...(applyPassword === undefined
+          ? {}
+          : { applyPasswordHash: applyPassword ? hashApplyPassword(applyPassword) : null }),
+      });
       if (!post) return res.status(404).json({ message: "Post not found" });
-      res.json(post);
+      res.json(toPublicPost(post));
     } catch (err) {
       if (err instanceof z.ZodError) {
         return res.status(400).json({ message: err.errors[0].message, field: err.errors[0].path.join(".") });

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { insertPostSchema, posts } from "./schema.js";
+import { createPostSchema, updatePostSchema, type PublicPost } from "./schema.js";
 
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
@@ -14,32 +14,32 @@ export const api = {
       path: "/api/posts" as const,
       input: z.object({ category: z.string().optional() }).optional(),
       responses: {
-        200: z.array(z.custom<typeof posts.$inferSelect>()),
+        200: z.array(z.custom<PublicPost>()),
       },
     },
     get: {
       method: "GET" as const,
       path: "/api/posts/:id" as const,
       responses: {
-        200: z.custom<typeof posts.$inferSelect>(),
+        200: z.custom<PublicPost>(),
         404: errorSchemas.notFound,
       },
     },
     create: {
       method: "POST" as const,
       path: "/api/posts" as const,
-      input: insertPostSchema,
+      input: createPostSchema,
       responses: {
-        201: z.custom<typeof posts.$inferSelect>(),
+        201: z.custom<PublicPost>(),
         400: errorSchemas.validation,
       },
     },
     update: {
       method: "PATCH" as const,
       path: "/api/posts/:id" as const,
-      input: insertPostSchema.partial(),
+      input: updatePostSchema,
       responses: {
-        200: z.custom<typeof posts.$inferSelect>(),
+        200: z.custom<PublicPost>(),
         400: errorSchemas.validation,
         404: errorSchemas.notFound,
       },

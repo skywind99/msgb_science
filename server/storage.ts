@@ -1,12 +1,12 @@
-import { posts, popups, type Post, type InsertPost, type Popup, type InsertPopup } from "../shared/schema.js";
+import { posts, popups, type Post, type NewPost, type Popup, type InsertPopup } from "../shared/schema.js";
 import { db } from "./db.js";
 import { eq, desc } from "drizzle-orm";
 
 export interface IStorage {
   getPosts(category?: string): Promise<Post[]>;
   getPost(id: number): Promise<Post | undefined>;
-  createPost(post: InsertPost): Promise<Post>;
-  updatePost(id: number, post: Partial<InsertPost>): Promise<Post | undefined>;
+  createPost(post: NewPost): Promise<Post>;
+  updatePost(id: number, post: Partial<NewPost>): Promise<Post | undefined>;
   deletePost(id: number): Promise<boolean>;
   getPopups(): Promise<Popup[]>;
   getActivePopups(): Promise<Popup[]>;
@@ -26,11 +26,11 @@ export class DatabaseStorage implements IStorage {
     const [post] = await db.select().from(posts).where(eq(posts.id, id));
     return post;
   }
-  async createPost(insertPost: InsertPost): Promise<Post> {
+  async createPost(insertPost: NewPost): Promise<Post> {
     const [post] = await db.insert(posts).values(insertPost).returning();
     return post;
   }
-  async updatePost(id: number, updatePost: Partial<InsertPost>): Promise<Post | undefined> {
+  async updatePost(id: number, updatePost: Partial<NewPost>): Promise<Post | undefined> {
     const [post] = await db.update(posts).set(updatePost).where(eq(posts.id, id)).returning();
     return post;
   }

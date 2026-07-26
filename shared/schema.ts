@@ -67,8 +67,37 @@ export const posts = pgTable("posts", {
   eventStartIdx: index("posts_event_start_idx").on(t.eventStart),
 }));
 
+// 날짜는 JSON 으로 오갈 때 문자열이 된다. 폼에서 비워 두면 빈 문자열이 오므로
+// 빈 문자열과 null 을 모두 "입력 안 함"으로 본다.
+const optionalTimestamp = z
+  .preprocess(
+    (v) => (v === "" || v === null ? null : v),
+    z.coerce.date({ invalid_type_error: "날짜 형식이 올바르지 않습니다." }).nullable()
+  )
+  .optional();
+
+// 정원도 마찬가지. 비워 두면 정원 무제한이다.
+const optionalCapacity = z
+  .preprocess(
+    (v) => (v === "" || v === null ? null : v),
+    z.coerce
+      .number({ invalid_type_error: "정원은 숫자로 입력해 주세요." })
+      .int()
+      .min(1, "정원은 1명 이상이어야 합니다.")
+      .max(1000, "정원이 너무 큽니다.")
+      .nullable()
+  )
+  .optional();
+
 export const insertPostSchema = createInsertSchema(posts, {
   blocks: z.array(contentBlockSchema).optional(),
+  eventStart: optionalTimestamp,
+  eventEnd: optionalTimestamp,
+  applyStart: optionalTimestamp,
+  applyDeadline: optionalTimestamp,
+  capacity: optionalCapacity,
+  location: z.string().trim().max(100, "장소가 너무 깁니다.").nullable().optional(),
+  applyNote: z.string().trim().max(500, "유의사항이 너무 깁니다.").nullable().optional(),
 }).omit({
   id: true,
   createdAt: true,
@@ -76,24 +105,77 @@ export const insertPostSchema = createInsertSchema(posts, {
   applyPasswordHash: true, // 서버가 평문을 받아 해싱한다
 });
 
+// 활동 일시·마감의 앞뒤 관계 검사. 값이 없는 필드는 통과시키므로
+// 부분 수정(PATCH)에도 그대로 쓸 수 있다.
+type ActivityDates = {
+  applyEnabled?: boolean;
+  eventStart?: Date | null;
+  eventEnd?: Date | null;
+  applyStart?: Date | null;
+  applyDeadline?: Date | null;
+};
+
+function checkActivityDates<T extends z.ZodTypeAny>(schema: T) {
+  return schema
+    .refine((v: ActivityDates) => !v.applyEnabled || !!v.eventStart, {
+      message: "신청을 받으려면 활동 일시를 입력해야 합니다.",
+      path: ["eventStart"],
+    })
+    .refine((v: ActivityDates) => !v.eventEnd || !v.eventStart || v.eventEnd >= v.eventStart, {
+      message: "종료 일시가 시작 일시보다 빠릅니다.",
+      path: ["eventEnd"],
+    })
+    .refine(
+      (v: ActivityDates) => !v.applyDeadline || !v.eventStart || v.applyDeadline <= v.eventStart,
+      { message: "신청 마감은 활동 시작 이전이어야 합니다.", path: ["applyDeadline"] }
+    )
+    .refine(
+      (v: ActivityDates) => !v.applyStart || !v.applyDeadline || v.applyStart <= v.applyDeadline,
+      { message: "신청 시작이 신청 마감보다 늦습니다.", path: ["applyStart"] }
+    );
+}
+
 // 교사 활동 등록 폼이 실제로 보내는 형태
-export const createPostSchema = insertPostSchema.extend({
-  applyPassword: z.string().min(1).max(50).optional(),
-}).refine(
-  (v) => !v.applyEnabled || !!v.eventStart,
-  { message: "신청을 받으려면 활동 일시를 입력해야 합니다.", path: ["eventStart"] }
-).refine(
-  (v) => !v.eventEnd || !v.eventStart || v.eventEnd >= v.eventStart,
-  { message: "종료 일시가 시작 일시보다 빠릅니다.", path: ["eventEnd"] }
-).refine(
-  (v) => !v.applyDeadline || !v.eventStart || v.applyDeadline <= v.eventStart,
-  { message: "신청 마감은 활동 시작 이전이어야 합니다.", path: ["applyDeadline"] }
+export const createPostSchema = checkActivityDates(
+  insertPostSchema.extend({
+    applyPassword: z.string().min(1, "신청 비밀번호를 입력해 주세요.").max(50).optional(),
+  })
+);
+
+// 수정 폼. 빈 문자열 비밀번호는 "비밀번호 사용 안 함"이라는 뜻이다.
+export const updatePostSchema = checkActivityDates(
+  insertPostSchema
+    .extend({ applyPassword: z.string().max(50).optional() })
+    .partial()
 );
 
 export type InsertPost = z.infer<typeof insertPostSchema>;
 export type CreatePostRequest = z.infer<typeof createPostSchema>;
-export type UpdatePostRequest = Partial<CreatePostRequest>;
+export type UpdatePostRequest = z.infer<typeof updatePostSchema>;
 export type Post = typeof posts.$inferSelect;
+
+/** 스토리지가 실제로 쓰는 형태. 평문 비밀번호 대신 해시와 작성자가 들어간다. */
+export type NewPost = InsertPost & {
+  applyPasswordHash?: string | null;
+  authorId?: string | null;
+};
+
+/**
+ * 게시물 API 가 내려보내는 형태.
+ *
+ * `applyPasswordHash` 를 절대 포함하지 않는다. 게시물 조회는 공개 API 이고,
+ * 신청 비밀번호는 교사가 학급에 구두로 알려주는 짧은 문자열이라
+ * 해시가 유출되면 오프라인 대입으로 뚫린다.
+ * 폼에서 필요한 것은 "설정 여부"뿐이므로 불리언만 내려보낸다.
+ */
+export type PublicPost = Omit<Post, "applyPasswordHash"> & {
+  hasApplyPassword: boolean;
+};
+
+export function toPublicPost(post: Post): PublicPost {
+  const { applyPasswordHash, ...rest } = post;
+  return { ...rest, hasApplyPassword: !!applyPasswordHash };
+}
 
 // ── 활동 신청 ─────────────────────────────────────────────
 // 계정 없이 신청한다. 수집 항목은 학년·반·번호·이름 넷뿐.

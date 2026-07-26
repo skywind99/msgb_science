@@ -8,6 +8,7 @@ import { AdminProvider } from "@/contexts/admin";
 import Home from "@/pages/Home";
 import CategoryPage from "@/pages/CategoryPage";
 import PostDetail from "@/pages/PostDetail";
+import Schedule from "@/pages/Schedule";
 import NotFound from "@/pages/not-found";
 import { PopupDisplay } from "@/components/PopupDisplay";
 
@@ -33,6 +34,7 @@ function Router() {
           <Route path="/community">
             {() => <CategoryPage categoryId="local_community" />}
           </Route>
+          <Route path="/schedule" component={Schedule} />
           <Route path="/posts/:id" component={PostDetail} />
           <Route component={NotFound} />
         </Switch>

@@ -1,6 +1,15 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { type Post, type ContentBlock } from "@shared/schema";
+import { type PublicPost, type ContentBlock } from "@shared/schema";
+import { api } from "@shared/routes";
+import { ActivityInfo } from "@/components/ActivityInfo";
+import {
+  ActivityFields,
+  activityFromPost,
+  activityToPayload,
+  emptyActivity,
+  type ActivityDraft,
+} from "@/components/ActivityFields";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
 import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube, Bell, Upload, Loader2 } from "lucide-react";
@@ -195,8 +204,9 @@ export default function PostDetail() {
   const [editTitle, setEditTitle] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
   const [editBlocks, setEditBlocks] = useState<ContentBlock[]>([{ imageUrl: "", content: "" }]);
+  const [editActivity, setEditActivity] = useState<ActivityDraft>(emptyActivity);
 
-  const { data: post, isLoading } = useQuery<Post>({
+  const { data: post, isLoading } = useQuery<PublicPost>({
     queryKey: ["/api/posts", id],
     queryFn: async () => {
       const res = await fetch(`/api/posts/${id}`);
@@ -220,7 +230,7 @@ export default function PostDetail() {
   };
 
   const updateMutation = useMutation({
-    mutationFn: async (data: { title: string; imageUrl?: string; blocks?: ContentBlock[]; content: string }) =>
+    mutationFn: async (data: Record<string, unknown>) =>
       authedFetch("PATCH", `/api/posts/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts", id] });
@@ -285,6 +295,7 @@ export default function PostDetail() {
         ? existingBlocks
         : [{ imageUrl: "", content: post.content ?? "" }]
     );
+    setEditActivity(activityFromPost(post));
     setEditOpen(true);
   };
 
@@ -293,12 +304,26 @@ export default function PostDetail() {
       .map((b) => ({ imageUrl: b.imageUrl?.trim() || undefined, content: b.content?.trim() || undefined, youtubeUrl: (b as any).youtubeUrl?.trim() || undefined }))
       .filter((b) => b.imageUrl || b.content || b.youtubeUrl);
     const firstText = cleanedBlocks.find((b) => b.content)?.content ?? "";
-    updateMutation.mutate({
+
+    const payload = {
       title: editTitle,
       imageUrl: editImageUrl.trim() || undefined,
       blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
       content: firstText,
-    });
+      ...activityToPayload(editActivity, "update"),
+    };
+
+    // 활동 일시·마감의 앞뒤 관계를 서버와 같은 규칙으로 미리 확인한다.
+    const checked = api.posts.update.input.safeParse(payload);
+    if (!checked.success) {
+      toast({
+        title: "입력을 확인해 주세요.",
+        description: checked.error.errors[0].message,
+        variant: "destructive",
+      });
+      return;
+    }
+    updateMutation.mutate(checked.data);
   };
 
   if (isLoading) {
@@ -393,6 +418,13 @@ export default function PostDetail() {
         </div>
       )}
 
+      {/* 활동 정보 — 본문보다 위에 둔다. 일시·마감이 가장 먼저 필요한 정보다. */}
+      {post.applyEnabled && (
+        <div className="max-w-3xl mx-auto px-4 pt-8">
+          <ActivityInfo post={post} />
+        </div>
+      )}
+
       <div className="max-w-3xl mx-auto px-4 py-10">
         {/* 본문 블록 */}
         <div className="space-y-8">
@@ -446,7 +478,8 @@ export default function PostDetail() {
           <DialogHeader>
             <DialogTitle>게시물 수정</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          {/* 활동 정보까지 들어가면 길어지므로 본문 영역만 스크롤한다 */}
+          <div className="space-y-4 py-2 max-h-[65vh] overflow-y-auto pr-1">
             <div className="space-y-2">
               <Label>제목</Label>
               <Input
@@ -465,6 +498,10 @@ export default function PostDetail() {
             <div className="space-y-2">
               <Label>본문 블록</Label>
               <BlockEditor blocks={editBlocks} onChange={setEditBlocks} authHeaders={authHeaders} />
+            </div>
+            <div className="space-y-2">
+              <Label>활동 신청</Label>
+              <ActivityFields value={editActivity} onChange={setEditActivity} />
             </div>
           </div>
           <DialogFooter>
