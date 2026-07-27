@@ -81,6 +81,23 @@ CLAUDE.md 의 "확정된 설계 결정" 이라 먼저 확인을 받고 바꿨다
 기존 신청 2건은 옛 6자리 코드 해시를 갖고 있다. 검증 방식이 같은 scrypt 라
 그 학생들은 6자리 코드를 "확인 비밀번호" 로 입력하면 그대로 조회된다.
 
+### db:push 가 죽었다 — schema.ts 는 상대 import 를 못 받는다
+`shared/schema.ts` 에 `import ... from "./studentSecret.js"` 를 넣자
+`npm run db:push` 가 `MODULE_NOT_FOUND: ./studentSecret.js` 로 실패했다.
+
+drizzle-kit 은 `drizzle.config.ts` 의 `schema: "./shared/schema.ts"` 를
+**CJS 로 직접 require** 한다. 이때 `.js` 확장자를 붙인 상대 경로를 `.ts` 로
+되돌리지 못한다. 번들러(vite·esbuild)와 tsc 는 해 주는 일이라 타입 체크와 빌드는
+멀쩡히 통과했고, db:push 에서만 터졌다.
+
+애초에 비밀번호 강도 규칙은 DB 스키마와 상관이 없다. 마이그레이션 도구가 앱 검증
+로직을 읽을 이유가 없으므로 `shared/applyForms.ts` 로 분리했다
+(`applyRequestSchema`, `lookupApplicationSchema`).
+**schema.ts 에는 다른 shared 모듈을 import 하지 말 것.** 양쪽 파일에 주석으로 남겼다.
+
+확장자를 떼는 것으로도 해결되지만(CJS 가 `.ts` 로더를 등록하므로) 분리가 맞는 답이다.
+schema.ts 는 표 정의만 갖고 있어야 한다.
+
 ### 검증
 40개 케이스 통과. 약한 비밀번호 13종 거부(1234·0000·111111·123456·654321·
 생년월일 2종·password·qwerty·짧음·공백·본인 학번 2종), 통과해야 하는 4종,

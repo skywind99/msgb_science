@@ -1,8 +1,7 @@
 import { z } from "zod";
+import { applyRequestSchema, lookupApplicationSchema } from "./applyForms.js";
 import {
-  applyRequestSchema,
   createPostSchema,
-  lookupApplicationSchema,
   updateApplicationSchema,
   updatePostSchema,
   type ApplicationSummary,

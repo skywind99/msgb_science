@@ -1,7 +1,6 @@
 import { pgTable, text, serial, integer, timestamp, json, boolean, uuid, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
-import { checkStudentPassword, MAX_LENGTH } from "./studentSecret.js";
 
 // ── 게시물 본문 블록 ──────────────────────────────────────
 export const contentBlockSchema = z.object({
@@ -220,54 +219,14 @@ export const insertApplicationSchema = createInsertSchema(applications, {
   status: true,   // 서버가 정원을 보고 정한다
 });
 
-// 신청 폼이 실제로 보내는 형태.
-// postId 는 URL 에서 받으므로 본문에서는 빼둔다. 둘이 어긋날 여지를 없앤다.
+// 신청 폼이 실제로 보내는 형태(`applyRequestSchema`, `lookupApplicationSchema`)는
+// `shared/applyForms.ts` 에 있다. 비밀번호 강도 규칙을 쓰기 때문이다.
 //
-// 비밀번호가 두 개 나오는데 주인이 다르다. 헷갈리지 말 것.
-// - `applyPassword`  : 교사가 활동에 걸어둔 것. 해당 학급에만 구두로 알려준다.
-// - `studentPassword`: 학생이 자기 신청을 조회·취소하려고 직접 정하는 것.
-export const applyRequestSchema = insertApplicationSchema
-  .omit({ postId: true })
-  .extend({
-    applyPassword: z.string().max(50).optional(),
-    studentPassword: z.string().min(1, "확인 비밀번호를 정해 주세요.").max(MAX_LENGTH),
-    // 수집 항목·보유기간 고지에 대한 동의. 체크하지 않으면 접수하지 않는다.
-    agree: z.literal(true, {
-      errorMap: () => ({ message: "개인정보 수집·이용에 동의해야 신청할 수 있습니다." }),
-    }),
-  })
-  // 추측하기 쉬운 비밀번호를 여기서 막는다. 학생이 정하는 값이라 그냥 두면
-  // 절반이 1234 나 생년월일을 쓴다. 자세한 이유는 shared/studentSecret.ts 참고.
-  .superRefine((v, ctx) => {
-    const problem = checkStudentPassword(v.studentPassword, {
-      grade: v.grade,
-      classNo: v.classNo,
-      studentNo: v.studentNo,
-    });
-    if (problem) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: problem,
-        path: ["studentPassword"],
-      });
-    }
-  });
-
-// 본인 신청 조회·취소.
-// 여기서는 강도 검사를 하지 않는다. 규칙이 바뀌기 전에 만든 비밀번호로도
-// 조회할 수 있어야 하고, 검사 결과가 "이 값은 규칙에 안 맞음"이라는 힌트가 되면
-// 오히려 추측 범위를 좁혀 준다.
-export const lookupApplicationSchema = z.object({
-  postId: z.number().int(),
-  grade: z.number().int().min(1).max(3),
-  classNo: z.number().int().min(1).max(20),
-  studentNo: z.number().int().min(1).max(50),
-  studentPassword: z.string().min(1, "확인 비밀번호를 입력해 주세요.").max(MAX_LENGTH),
-});
+// **이 파일에서 다른 shared 모듈을 import 하지 말 것.**
+// drizzle-kit 이 이 파일을 CJS 로 직접 읽으면서 `.js` 확장자를 `.ts` 로 되돌리지
+// 못해, 상대 import 를 하나만 넣어도 `npm run db:push` 가 MODULE_NOT_FOUND 로 죽는다.
 
 export type InsertApplication = z.infer<typeof insertApplicationSchema>;
-export type ApplyRequest = z.infer<typeof applyRequestSchema>;
-export type LookupApplicationRequest = z.infer<typeof lookupApplicationSchema>;
 export type Application = typeof applications.$inferSelect;
 
 // 학생에게 내려보내는 공개 정보. 명단은 교사만 볼 수 있으므로
