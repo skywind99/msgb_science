@@ -5,6 +5,7 @@ import { api } from "../shared/routes.js";
 import {
   toMyApplication,
   toPublicPost,
+  toInviteSummary,
   toRosterEntry,
   type Application,
   type Post,
@@ -12,7 +13,14 @@ import {
 import { activityStage, STAGE_REJECT_MESSAGE } from "../shared/activity.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
-import { ensureAuth, type AuthedRequest, type AuthUser } from "./auth.js";
+import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
+import {
+  acceptInvite,
+  createInvite,
+  deleteInvite,
+  listInvites,
+  lookupInvite,
+} from "./invites.js";
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
 import {
   applyToPost,
@@ -585,6 +593,90 @@ export async function registerRoutes(
       console.error("applications summary error:", err);
       res.status(500).json({ message: "신청 현황을 불러올 수 없습니다." });
     }
+  });
+
+  // ── 교사 초대 ────────────────────────────────────────────
+  // 자율 가입을 열지 않으므로 교사 계정은 이 경로로만 생긴다.
+  // 발급·목록·삭제는 admin 전용. 확인·수락은 링크를 가진 사람이 쓰는 공개 경로다.
+
+  app.get(api.invites.list.path, requireAdmin(), async (_req, res) => {
+    const rows = await listInvites();
+    res.json(rows.map((i) => toInviteSummary(i)));
+  });
+
+  app.post(api.invites.create.path, requireAdmin(), async (req, res) => {
+    try {
+      const input = api.invites.create.input.parse(req.body);
+      const { invite, token } = await createInvite(input);
+      // 평문 토큰이 실리는 유일한 응답이다. 다시 볼 수 없다.
+      res.status(201).json({
+        invite: toInviteSummary(invite),
+        link: `/invite/${token}`,
+      });
+    } catch (err) {
+      return badRequest(res, err);
+    }
+  });
+
+  app.delete(api.invites.remove.path, requireAdmin(), async (req, res) => {
+    const id = parseInt(String(req.params.id));
+    if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
+    const ok = await deleteInvite(id);
+    if (!ok) return res.status(404).json({ message: "초대를 찾을 수 없습니다." });
+    res.status(204).end();
+  });
+
+  // 토큰은 256비트 난수라 무차별 대입이 성립하지 않는다.
+  // 그래도 공개 경로이므로 남용 방지용 IP 제한은 걸어 둔다.
+  app.post(api.invites.check.path, async (req, res) => {
+    const gate = await hitLimit(
+      `invite:ip:${clientIp(req)}`,
+      LIMITS.invitePerIp.limit,
+      LIMITS.invitePerIp.windowSec
+    );
+    if (!gate.ok) return tooManyRequests(res, gate);
+
+    try {
+      const { token } = api.invites.check.input.parse(req.body);
+      const found = await lookupInvite(token);
+      if (!found.ok) return res.json({ valid: false, reason: found.reason });
+      res.json({ valid: true, role: found.invite.role, memo: found.invite.memo });
+    } catch (err) {
+      return badRequest(res, err);
+    }
+  });
+
+  app.post(api.invites.accept.path, async (req, res) => {
+    const gate = await hitLimit(
+      `invite:ip:${clientIp(req)}`,
+      LIMITS.invitePerIp.limit,
+      LIMITS.invitePerIp.windowSec
+    );
+    if (!gate.ok) return tooManyRequests(res, gate);
+
+    let input;
+    try {
+      input = api.invites.accept.input.parse(req.body);
+    } catch (err) {
+      return badRequest(res, err);
+    }
+
+    const found = await lookupInvite(input.token);
+    if (!found.ok) {
+      const message =
+        found.reason === "expired"
+          ? "초대 링크가 만료되었습니다. 관리자에게 새 링크를 요청해 주세요."
+          : found.reason === "used"
+            ? "이미 사용된 초대 링크입니다."
+            : "유효하지 않은 초대 링크입니다.";
+      return res.status(400).json({ message });
+    }
+
+    const result = await acceptInvite(found.invite, input);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+    res.status(201).json({ ok: true });
   });
 
   // ── 교사용 신청자 명단 ───────────────────────────────────

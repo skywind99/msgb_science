@@ -1,12 +1,18 @@
 import { z } from "zod";
 import { applyRequestSchema, lookupApplicationSchema } from "./applyForms.js";
 import {
+  acceptInviteSchema,
+  checkInviteSchema,
+  createInviteSchema,
   createPostSchema,
   updateApplicationSchema,
   updatePostSchema,
   type ApplicationSummary,
   type ApplyResponse,
   type CancelResponse,
+  type CheckInviteResponse,
+  type CreateInviteResponse,
+  type InviteSummary,
   type LookupResponse,
   type PublicPost,
   type RosterEntry,
@@ -120,6 +126,61 @@ export const api = {
       path: "/api/applications/summary" as const,
       responses: {
         200: z.array(z.custom<ApplicationSummary>()),
+      },
+    },
+  },
+
+  // 교사 초대. 자율 가입이 없으므로 계정은 이 경로로만 생긴다.
+  // 발급·목록·삭제는 admin 전용, 확인·수락은 링크를 가진 사람이 쓰는 공개 경로다.
+  invites: {
+    list: {
+      method: "GET" as const,
+      path: "/api/invites" as const,
+      responses: {
+        200: z.array(z.custom<InviteSummary>()),
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
+      },
+    },
+    create: {
+      method: "POST" as const,
+      path: "/api/invites" as const,
+      input: createInviteSchema,
+      responses: {
+        201: z.custom<CreateInviteResponse>(),
+        400: errorSchemas.validation,
+        403: errorSchemas.notFound,
+      },
+    },
+    remove: {
+      method: "DELETE" as const,
+      path: "/api/invites/:id" as const,
+      responses: {
+        204: z.void(),
+        403: errorSchemas.notFound,
+        404: errorSchemas.notFound,
+      },
+    },
+    // 링크를 열었을 때 살아있는 초대인지 확인. 토큰을 URL 에 두지 않으려고 POST 다.
+    check: {
+      method: "POST" as const,
+      path: "/api/invites/check" as const,
+      input: checkInviteSchema,
+      responses: {
+        200: z.custom<CheckInviteResponse>(),
+        400: errorSchemas.validation,
+        429: errorSchemas.tooMany,
+      },
+    },
+    accept: {
+      method: "POST" as const,
+      path: "/api/invites/accept" as const,
+      input: acceptInviteSchema,
+      responses: {
+        201: z.object({ ok: z.literal(true) }),
+        400: errorSchemas.validation,
+        409: errorSchemas.validation,
+        429: errorSchemas.tooMany,
       },
     },
   },

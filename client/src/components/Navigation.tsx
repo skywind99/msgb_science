@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
+import { InviteManager } from "@/components/InviteManager";
 
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
@@ -218,6 +219,8 @@ export function Navigation() {
                 <>
                   <StorageBadge />
                   <PopupManager />
+                  {/* 초대 발급은 관리자만. 기존 관리자 비밀번호로 들어온 경우도 관리자다. */}
+                  {(!user || user.role === "admin") && <InviteManager />}
                   {user && (
                     <span
                       className="hidden sm:inline text-xs font-semibold text-muted-foreground px-2"

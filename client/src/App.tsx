@@ -9,6 +9,7 @@ import Home from "@/pages/Home";
 import CategoryPage from "@/pages/CategoryPage";
 import PostDetail from "@/pages/PostDetail";
 import Schedule from "@/pages/Schedule";
+import AcceptInvite from "@/pages/AcceptInvite";
 import NotFound from "@/pages/not-found";
 import { PopupDisplay } from "@/components/PopupDisplay";
 
@@ -36,6 +37,8 @@ function Router() {
           </Route>
           <Route path="/schedule" component={Schedule} />
           <Route path="/posts/:id" component={PostDetail} />
+          {/* 교사 초대 링크. 토큰은 SPA 라우팅으로만 다루므로 서버 로그에 남지 않는다. */}
+          <Route path="/invite/:token" component={AcceptInvite} />
           <Route component={NotFound} />
         </Switch>
       </main>

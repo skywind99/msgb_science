@@ -38,6 +38,70 @@ export const invites = pgTable("invites", {
 
 export type Invite = typeof invites.$inferSelect;
 
+// 관리자가 초대를 발급할 때
+export const createInviteSchema = z.object({
+  role: z.enum(["teacher", "admin"]).default("teacher"),
+  memo: z.string().trim().max(100, "메모가 너무 깁니다.").optional(),
+  expiresInDays: z.number().int().min(1).max(30).default(7),
+});
+
+// 초대받은 교사가 계정을 만들 때. 공개 경로다.
+export const acceptInviteSchema = z.object({
+  token: z.string().min(20).max(200),
+  email: z.string().trim().toLowerCase().email("올바른 이메일이 아닙니다.").max(200),
+  // Supabase Auth 는 bcrypt 를 쓴다. 72바이트를 넘으면 조용히 잘리므로 여기서 막는다.
+  password: z.string().min(8, "비밀번호는 8자 이상이어야 합니다.").max(72),
+  name: z.string().trim().min(2, "이름을 입력해 주세요.").max(20),
+});
+
+// 링크를 열었을 때 유효한 초대인지만 먼저 확인한다
+export const checkInviteSchema = z.object({
+  token: z.string().min(20).max(200),
+});
+
+export type CreateInviteRequest = z.infer<typeof createInviteSchema>;
+export type AcceptInviteRequest = z.infer<typeof acceptInviteSchema>;
+
+/** 관리자 화면에 보여주는 초대 정보. 토큰 해시는 내보내지 않는다. */
+export type InviteSummary = {
+  id: number;
+  role: "teacher" | "admin";
+  memo: string | null;
+  expiresAt: string;
+  createdAt: string | null;
+  usedAt: string | null;
+  used: boolean;
+  expired: boolean;
+};
+
+export function toInviteSummary(invite: Invite, now = new Date()): InviteSummary {
+  return {
+    id: invite.id,
+    role: invite.role === "admin" ? "admin" : "teacher",
+    memo: invite.memo,
+    expiresAt: invite.expiresAt.toISOString(),
+    createdAt: invite.createdAt ? invite.createdAt.toISOString() : null,
+    usedAt: invite.usedAt ? invite.usedAt.toISOString() : null,
+    used: !!invite.usedBy || !!invite.usedAt,
+    expired: invite.expiresAt < now,
+  };
+}
+
+/** 발급 응답. 평문 토큰이 실리는 유일한 곳이다. 다시 볼 수 없다. */
+export type CreateInviteResponse = {
+  invite: InviteSummary;
+  /** 교사에게 전달할 초대 링크 경로 (`/invite/<token>`) */
+  link: string;
+};
+
+/** 초대 링크를 열었을 때 보여줄 정보 */
+export type CheckInviteResponse = {
+  valid: boolean;
+  role?: "teacher" | "admin";
+  memo?: string | null;
+  reason?: "notfound" | "used" | "expired";
+};
+
 // ── 게시물 (공지 + 활동 겸용) ─────────────────────────────
 // applyEnabled 가 false 면 지금까지와 동일한 일반 공지글.
 // true 면 하단에 신청 폼이 붙고 정원·마감이 적용된다.

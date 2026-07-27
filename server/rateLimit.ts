@@ -135,4 +135,9 @@ export const LIMITS = {
   applyPasswordFail: { limit: 10, windowSec: 600 },
   lookupPerStudent: { limit: 5, windowSec: 600 },
   lookupPerIp: { limit: 20, windowSec: 3600 },
+  /**
+   * 초대 링크 확인·수락. 토큰이 256비트 난수라 대입이 성립하지 않으므로
+   * 강도 방어가 아니라 남용 방지용이다. 교사가 한 번 쓰는 경로라 넉넉할 필요가 없다.
+   */
+  invitePerIp: { limit: 20, windowSec: 600 },
 } as const;

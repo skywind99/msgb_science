@@ -30,24 +30,34 @@
 
 기존 P0 보안 과제가 이 단계에서 함께 해결된다.
 
-진행 상황 (2026-07-25)
-- 슬라이스 1 완료 — Supabase Auth 로그인을 기존 방식과 **병행**으로 추가했다.
+진행 상황 (2026-07-27)
+- 슬라이스 1 (2026-07-25) — Supabase Auth 로그인을 기존 방식과 **병행**으로 추가.
   `server/auth.ts` 의 `resolveUser` 가 Bearer 토큰을 먼저 보고 없으면 기존
-  `x-admin-password` 로 넘어간다. 새 방식이 실패해도 기존 경로로 들어갈 수 있다.
-- 남은 일: Supabase 대시보드 설정(Email 활성화 / 자율 가입 차단 / 계정 생성),
-  `profiles` 행 삽입, 초대 흐름, 그리고 마지막에 `x-admin-password` 제거.
+  `x-admin-password` 로 넘어간다.
+- 슬라이스 2 (2026-07-27) — 첫 admin 계정 활성화 + 초대 링크 흐름 완성.
+  이제 교사 계정을 발급할 수 있다.
+- **남은 일은 `x-admin-password` 제거 하나뿐이다.**
 
 - [x] `profiles` 테이블 생성 (`id`는 `auth.users.id` 사용)
 - [x] Supabase Auth 로그인 추가 (`server/auth.ts`, `client/src/lib/supabase.ts`)
-- [ ] Supabase 대시보드 설정 — Email 활성화, "Allow new users to sign up" 끄기, 첫 계정 생성
-- [ ] `profiles` 행 삽입 (첫 계정을 `role='admin'` 으로)
-- [ ] **Vercel 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가** — 빌드 타임 변수라
-      없으면 배포본에서 교사 로그인이 아예 나타나지 않는다. 추가 후 재배포 필요.
-- [ ] 기존 `x-admin-password` 헤더 인증 전면 제거
+- [x] Supabase 대시보드 설정 — Email 활성화, "Allow new users to sign up" 끄기, 첫 계정 생성
+      (2026-07-27. anon 키로 직접 `/auth/v1/signup` 이 거부되는 것을 확인했다.)
+- [x] `profiles` 행 삽입 — `skywind99@naver.com` 을 `admin` 으로. 이름은 "관리자"로 넣었으니
+      바꾸려면 `update profiles set name = '...' where role = 'admin'`
+- [x] **Vercel 에 `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` 추가** — 이미 들어가 있었다.
+      배포본 번들에서 확인했다.
+- [x] 초대 링크 발급·사용 흐름 (`invites` 테이블, 토큰은 sha256 해시 저장, 기본 7일)
+      계정 생성은 서버가 `service_role` 로 Admin API 를 쓴다. 브라우저에서
+      `signUp` 을 부르면 자율 가입이 꺼져 있어 실패한다.
+- [x] 역할 두 단계: `admin`(전체 관리) / `teacher`(자기 활동만 관리)
+      교사는 초대 발급·목록 403, 남의 활동 명단 403 을 테스트로 확인했다.
+- [ ] 기존 `x-admin-password` 헤더 인증 전면 제거 — **이제 제거할 수 있는 상태다.**
+      제거 전에 admin 계정 이메일 로그인이 확실히 되는지 확인할 것.
+      잠기면 되돌릴 방법이 없다.
   - `client/src/contexts/admin.tsx` — localStorage 평문 비밀번호 저장 폐기
-  - `server/routes.ts` — `checkAdminPassword` 를 토큰 검증 미들웨어로 교체
-- [ ] 역할 두 단계: `admin`(전체 관리) / `teacher`(자기 활동만 관리)
-- [ ] 초대 링크 발급·사용 흐름 (`invites` 테이블, 토큰은 해시 저장, 유효기간 7일)
+  - `server/auth.ts` — `legacyAdmin` 과 호출부 제거
+- [ ] 계정 관리 화면 — 교사 목록 조회, 이름·권한 변경, 계정 비활성화.
+      지금은 `profiles` 를 직접 고쳐야 한다.
 - [ ] 미사용 의존성 정리 — `passport`, `passport-local`, `express-session`, `connect-pg-simple`, `memorystore`
 - [ ] 로그인 실패 요청 제한 (Supabase Auth 기본 제한 확인 후 부족하면 보완)
 
