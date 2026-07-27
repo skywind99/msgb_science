@@ -286,6 +286,50 @@ export function toMyApplication(
   };
 }
 
+/**
+ * 교사용 명단 항목.
+ *
+ * 개별 신청자가 나가는 유일한 인증 경로다. 담당 교사와 `admin` 만 받을 수 있다.
+ * 확인코드 해시는 절대 포함하지 않는다 — 6자리라 해시가 새면 바로 뚫린다.
+ */
+export type RosterEntry = {
+  id: number;
+  grade: number;
+  classNo: number;
+  studentNo: number;
+  name: string;
+  memo: string | null;
+  status: "applied" | "waitlisted";
+  createdAt: string | null;
+};
+
+export function toRosterEntry(app: Application): RosterEntry {
+  return {
+    id: app.id,
+    grade: app.grade,
+    classNo: app.classNo,
+    studentNo: app.studentNo,
+    name: app.name,
+    memo: app.memo,
+    status: app.status === "waitlisted" ? "waitlisted" : "applied",
+    createdAt: app.createdAt ? app.createdAt.toISOString() : null,
+  };
+}
+
+/** 교사가 신청 상태를 직접 바꿀 때. 대기자를 신청 확정으로 올리는 것이 주 용도다. */
+export const updateApplicationSchema = z.object({
+  status: z.enum(["applied", "waitlisted"], {
+    errorMap: () => ({ message: "상태는 applied 또는 waitlisted 여야 합니다." }),
+  }),
+});
+
+export type RosterResponse = {
+  postId: number;
+  title: string;
+  capacity: number | null;
+  entries: RosterEntry[];
+};
+
 /** 신청 완료 응답. 평문 확인코드가 실리는 유일한 곳이다. */
 export type ApplyResponse = {
   code: string;

@@ -2,19 +2,29 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
-import { toMyApplication, toPublicPost, type Application, type Post } from "../shared/schema.js";
+import {
+  toMyApplication,
+  toPublicPost,
+  toRosterEntry,
+  type Application,
+  type Post,
+} from "../shared/schema.js";
 import { activityStage, STAGE_REJECT_MESSAGE } from "../shared/activity.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
-import { ensureAuth, type AuthedRequest } from "./auth.js";
+import { ensureAuth, type AuthedRequest, type AuthUser } from "./auth.js";
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
 import {
   applyToPost,
   cancelApplication,
+  findApplicationWithPost,
   findByCode,
+  listApplications,
   positionOf,
+  removeApplication,
   summariesForAll,
   summaryFor,
+  updateApplicationStatus,
 } from "./applications.js";
 import {
   clientIp,
@@ -155,6 +165,59 @@ async function loadActivity(req: Request, res: Response): Promise<Post | null> {
     return null;
   }
   return post;
+}
+
+/**
+ * 명단을 볼 권한이 있는지 확인한다.
+ *
+ * `admin` 은 전체, `teacher` 는 자기가 올린 활동만이다. 학생 개인정보가 나가는
+ * 경로이므로 게시물이 존재하는지보다 권한을 먼저 따진다.
+ *
+ * 기존 관리자 비밀번호로 만든 게시물은 `authorId` 가 null 이다.
+ * 이런 글은 admin 만 볼 수 있다 — 담당자를 알 수 없는 명단을 아무 교사에게나
+ * 열어주는 것보다 낫다.
+ */
+async function loadOwnedActivity(
+  req: Request,
+  res: Response
+): Promise<{ post: Post; user: AuthUser } | null> {
+  const user = await ensureAuth(req, res);
+  if (!user) return null;
+
+  const post = await loadActivity(req, res);
+  if (!post) return null;
+
+  if (user.role !== "admin" && post.authorId !== user.id) {
+    res.status(403).json({ message: "이 활동의 명단을 볼 권한이 없습니다." });
+    return null;
+  }
+  return { post, user };
+}
+
+/** 신청 한 건에 대한 권한 확인. 상태 변경·삭제가 같이 쓴다. */
+async function loadOwnedApplication(
+  req: Request,
+  res: Response
+): Promise<{ app: Application; post: Post; user: AuthUser } | null> {
+  const user = await ensureAuth(req, res);
+  if (!user) return null;
+
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) {
+    res.status(404).json({ message: "Invalid ID" });
+    return null;
+  }
+
+  const found = await findApplicationWithPost(id);
+  if (!found) {
+    res.status(404).json({ message: "신청을 찾을 수 없습니다." });
+    return null;
+  }
+  if (user.role !== "admin" && found.post.authorId !== user.id) {
+    res.status(403).json({ message: "이 활동의 명단을 관리할 권한이 없습니다." });
+    return null;
+  }
+  return { ...found, user };
 }
 
 /**
@@ -516,6 +579,42 @@ export async function registerRoutes(
       console.error("applications summary error:", err);
       res.status(500).json({ message: "신청 현황을 불러올 수 없습니다." });
     }
+  });
+
+  // ── 교사용 신청자 명단 ───────────────────────────────────
+  // 여기가 개별 신청자를 내보내는 유일한 인증 경로다.
+  // admin 은 전부, teacher 는 자기가 올린 활동만 볼 수 있다.
+
+  app.get(api.roster.list.path, async (req, res) => {
+    const owned = await loadOwnedActivity(req, res);
+    if (!owned) return;
+    const entries = await listApplications(owned.post.id);
+    res.json({
+      postId: owned.post.id,
+      title: owned.post.title,
+      capacity: owned.post.capacity,
+      entries: entries.map(toRosterEntry),
+    });
+  });
+
+  app.patch(api.roster.update.path, async (req, res) => {
+    const target = await loadOwnedApplication(req, res);
+    if (!target) return;
+    try {
+      const { status } = api.roster.update.input.parse(req.body);
+      const updated = await updateApplicationStatus(target.app, status);
+      res.json(toRosterEntry(updated));
+    } catch (err) {
+      return badRequest(res, err);
+    }
+  });
+
+  app.delete(api.roster.remove.path, async (req, res) => {
+    const target = await loadOwnedApplication(req, res);
+    if (!target) return;
+    const ok = await removeApplication(target.app.id);
+    if (!ok) return res.status(404).json({ message: "신청을 찾을 수 없습니다." });
+    res.status(204).end();
   });
 
   // ── 팝업 CRUD ────────────────────────────────────────────

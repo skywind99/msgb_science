@@ -236,6 +236,74 @@ export async function cancelApplication(
   });
 }
 
+/**
+ * 교사용 명단.
+ *
+ * 신청 확정을 먼저, 그 다음 대기자를 등록 순으로 보여준다.
+ * 대기 순서가 곧 승격 순서이므로 순서가 눈에 보여야 한다.
+ */
+export async function listApplications(postId: number): Promise<Application[]> {
+  const rows = await db
+    .select()
+    .from(applications)
+    .where(eq(applications.postId, postId))
+    .orderBy(asc(applications.id));
+
+  const applied = rows.filter((r) => r.status !== "waitlisted");
+  const waiting = rows.filter((r) => r.status === "waitlisted");
+
+  // 신청 확정은 학년·반·번호순이 명단으로 쓰기 편하다. 대기자는 등록 순 그대로.
+  applied.sort(
+    (a, b) =>
+      a.grade - b.grade || a.classNo - b.classNo || a.studentNo - b.studentNo
+  );
+  return [...applied, ...waiting];
+}
+
+/** 신청 한 건과 그 활동을 함께 불러온다. 권한 검사에 게시물이 필요하다. */
+export async function findApplicationWithPost(
+  id: number
+): Promise<{ app: Application; post: Post } | null> {
+  const [row] = await db
+    .select({ app: applications, post: posts })
+    .from(applications)
+    .innerJoin(posts, eq(applications.postId, posts.id))
+    .where(eq(applications.id, id))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * 교사가 상태를 직접 바꾼다.
+ *
+ * 정원을 넘겨서 올리는 것도 막지 않는다. 명단의 최종 권한은 담당 교사에게 있고,
+ * "한 명만 더 받자"는 판단은 화면이 아니라 교사가 한다. 대신 집계를 함께 돌려줘서
+ * 정원을 넘겼다는 사실이 바로 보이게 한다.
+ */
+export async function updateApplicationStatus(
+  app: Application,
+  status: "applied" | "waitlisted"
+): Promise<Application> {
+  const [row] = await db
+    .update(applications)
+    .set({ status })
+    .where(eq(applications.id, app.id))
+    .returning();
+  return row;
+}
+
+/**
+ * 교사가 신청을 지운다.
+ *
+ * 학생 본인 취소(`cancelApplication`)와 달리 대기자를 자동 승격시키지 않는다.
+ * 교사는 승격 버튼을 직접 갖고 있으므로, 지웠더니 다른 학생이 저절로 올라오는
+ * 동작은 오히려 명단 관리를 방해한다.
+ */
+export async function removeApplication(id: number): Promise<boolean> {
+  const rows = await db.delete(applications).where(eq(applications.id, id)).returning();
+  return rows.length > 0;
+}
+
 function buildSummary(post: Post, counts: Counts, now: Date): ApplicationSummary {
   const closes = applyClosesAt(post);
   return {

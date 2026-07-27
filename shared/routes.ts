@@ -3,12 +3,15 @@ import {
   applyRequestSchema,
   createPostSchema,
   lookupApplicationSchema,
+  updateApplicationSchema,
   updatePostSchema,
   type ApplicationSummary,
   type ApplyResponse,
   type CancelResponse,
   type LookupResponse,
   type PublicPost,
+  type RosterEntry,
+  type RosterResponse,
 } from "./schema.js";
 
 export const errorSchemas = {
@@ -118,6 +121,41 @@ export const api = {
       path: "/api/applications/summary" as const,
       responses: {
         200: z.array(z.custom<ApplicationSummary>()),
+      },
+    },
+  },
+
+  // 교사용 명단 관리. 담당 교사와 admin 만 통과한다.
+  // 개별 신청자가 나가는 유일한 인증 경로다.
+  roster: {
+    list: {
+      method: "GET" as const,
+      path: "/api/posts/:id/applications" as const,
+      responses: {
+        200: z.custom<RosterResponse>(),
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
+        404: errorSchemas.notFound,
+      },
+    },
+    update: {
+      method: "PATCH" as const,
+      path: "/api/applications/:id" as const,
+      input: updateApplicationSchema,
+      responses: {
+        200: z.custom<RosterEntry>(),
+        400: errorSchemas.validation,
+        403: errorSchemas.notFound,
+        404: errorSchemas.notFound,
+      },
+    },
+    remove: {
+      method: "DELETE" as const,
+      path: "/api/applications/:id" as const,
+      responses: {
+        204: z.void(),
+        403: errorSchemas.notFound,
+        404: errorSchemas.notFound,
       },
     },
   },

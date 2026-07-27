@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { type PublicPost, type ContentBlock } from "@shared/schema";
 import { api } from "@shared/routes";
 import { ActivityInfo } from "@/components/ActivityInfo";
+import { ApplicantList } from "@/components/ApplicantList";
 import {
   ActivityFields,
   activityFromPost,
@@ -420,8 +421,10 @@ export default function PostDetail() {
 
       {/* 활동 정보 — 본문보다 위에 둔다. 일시·마감이 가장 먼저 필요한 정보다. */}
       {post.applyEnabled && (
-        <div className="max-w-3xl mx-auto px-4 pt-8">
+        <div className="max-w-3xl mx-auto px-4 pt-8 space-y-4">
           <ActivityInfo post={post} />
+          {/* 명단은 교사에게만. 서버도 담당 교사·admin 만 통과시킨다. */}
+          {isAdmin && <ApplicantList post={post} />}
         </div>
       )}
 
