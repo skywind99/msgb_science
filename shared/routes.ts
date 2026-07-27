@@ -1,10 +1,22 @@
 import { z } from "zod";
-import { createPostSchema, updatePostSchema, type PublicPost } from "./schema.js";
+import {
+  applyRequestSchema,
+  createPostSchema,
+  lookupApplicationSchema,
+  updatePostSchema,
+  type ApplicationSummary,
+  type ApplyResponse,
+  type CancelResponse,
+  type LookupResponse,
+  type PublicPost,
+} from "./schema.js";
 
 export const errorSchemas = {
   validation: z.object({ message: z.string(), field: z.string().optional() }),
   notFound: z.object({ message: z.string() }),
   internal: z.object({ message: z.string() }),
+  /** 요청 제한. `Retry-After` 헤더가 함께 온다. */
+  tooMany: z.object({ message: z.string(), retryAfter: z.number() }),
 };
 
 export const api = {
@@ -50,6 +62,62 @@ export const api = {
       responses: {
         204: z.void(),
         404: errorSchemas.notFound,
+      },
+    },
+  },
+
+  // 학생용 신청 API. 계정이 없으므로 모두 공개 경로다.
+  // 개별 신청자를 반환하는 것은 확인코드가 맞은 lookup 하나뿐이다.
+  applications: {
+    apply: {
+      method: "POST" as const,
+      path: "/api/posts/:id/apply" as const,
+      input: applyRequestSchema,
+      responses: {
+        201: z.custom<ApplyResponse>(),
+        400: errorSchemas.validation,
+        403: errorSchemas.validation, // 신청 비밀번호 불일치
+        404: errorSchemas.notFound,
+        409: errorSchemas.validation, // 중복 신청 · 정원 마감
+        429: errorSchemas.tooMany,
+      },
+    },
+    lookup: {
+      method: "POST" as const,
+      path: "/api/applications/lookup" as const,
+      input: lookupApplicationSchema,
+      responses: {
+        200: z.custom<LookupResponse>(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+        429: errorSchemas.tooMany,
+      },
+    },
+    cancel: {
+      method: "POST" as const,
+      path: "/api/applications/cancel" as const,
+      input: lookupApplicationSchema,
+      responses: {
+        200: z.custom<CancelResponse>(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+        429: errorSchemas.tooMany,
+      },
+    },
+    summary: {
+      method: "GET" as const,
+      path: "/api/posts/:id/applications/summary" as const,
+      responses: {
+        200: z.custom<ApplicationSummary>(),
+        404: errorSchemas.notFound,
+      },
+    },
+    // 홈·일정 화면이 여러 활동의 남은 자리를 한 번에 받는다
+    summaries: {
+      method: "GET" as const,
+      path: "/api/applications/summary" as const,
+      responses: {
+        200: z.array(z.custom<ApplicationSummary>()),
       },
     },
   },

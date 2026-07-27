@@ -1,12 +1,29 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
-import { toPublicPost } from "../shared/schema.js";
+import { toMyApplication, toPublicPost, type Application, type Post } from "../shared/schema.js";
+import { activityStage, STAGE_REJECT_MESSAGE } from "../shared/activity.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, type AuthedRequest } from "./auth.js";
-import { hashApplyPassword } from "./applyPassword.js";
+import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
+import {
+  applyToPost,
+  cancelApplication,
+  findByCode,
+  positionOf,
+  summariesForAll,
+  summaryFor,
+} from "./applications.js";
+import {
+  clientIp,
+  hitLimit,
+  LIMITS,
+  pruneRateLimits,
+  resetLimit,
+  type LimitResult,
+} from "./rateLimit.js";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -94,6 +111,108 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
 
   scienceNewsCache = { data, fetchedAt: now };
   return data;
+}
+
+// ── 신청 API 공용 헬퍼 ────────────────────────────────────
+
+function tooManyRequests(res: Response, limit: LimitResult) {
+  res.setHeader("Retry-After", String(limit.retryAfterSec));
+  return res.status(429).json({
+    message: `요청이 너무 많습니다. ${limit.retryAfterSec}초 후에 다시 시도해 주세요.`,
+    retryAfter: limit.retryAfterSec,
+  });
+}
+
+function badRequest(res: Response, err: unknown) {
+  if (err instanceof z.ZodError) {
+    return res.status(400).json({
+      message: err.errors[0].message,
+      field: err.errors[0].path.join("."),
+    });
+  }
+  throw err;
+}
+
+/** 오래된 요청 제한 행 정리. 크론을 새로 붙이지 않고 낮은 확률로 같이 처리한다. */
+function maybePrune() {
+  if (Math.random() < 0.02) void pruneRateLimits();
+}
+
+/** 신청을 받는 게시물을 불러온다. 아니면 응답까지 보내고 null 을 반환한다. */
+async function loadActivity(req: Request, res: Response): Promise<Post | null> {
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) {
+    res.status(404).json({ message: "Invalid ID" });
+    return null;
+  }
+  const post = await storage.getPost(id);
+  if (!post) {
+    res.status(404).json({ message: "게시물을 찾을 수 없습니다." });
+    return null;
+  }
+  if (!post.applyEnabled) {
+    res.status(400).json({ message: "신청을 받지 않는 게시물입니다." });
+    return null;
+  }
+  return post;
+}
+
+/**
+ * 학년·반·번호 + 확인코드로 본인을 확인한다. 조회와 취소가 같이 쓴다.
+ *
+ * 요청 제한이 이 함수의 핵심이다. 확인코드는 6자리(100만 가지)라
+ * 제한이 없으면 하루면 전교생 명단이 털린다. 학생 단위와 IP 단위를 함께 걸고,
+ * 맞힌 뒤에는 카운터를 지워 정상 사용자가 막히지 않게 한다.
+ * 학교는 한 반이 같은 공용 IP 로 나오므로 이 초기화가 없으면 정상 조회가 서로를 막는다.
+ */
+async function verifiedApplication(
+  req: Request,
+  res: Response
+): Promise<{ post: Post; app: Application } | null> {
+  maybePrune();
+
+  let input;
+  try {
+    input = api.applications.lookup.input.parse(req.body);
+  } catch (err) {
+    badRequest(res, err);
+    return null;
+  }
+
+  const ip = clientIp(req);
+  const studentKey = `lookup:${input.postId}:${input.grade}:${input.classNo}:${input.studentNo}`;
+  const ipKey = `lookup:ip:${ip}`;
+
+  const byStudent = await hitLimit(
+    studentKey,
+    LIMITS.lookupPerStudent.limit,
+    LIMITS.lookupPerStudent.windowSec
+  );
+  if (!byStudent.ok) {
+    tooManyRequests(res, byStudent);
+    return null;
+  }
+
+  const byIp = await hitLimit(ipKey, LIMITS.lookupPerIp.limit, LIMITS.lookupPerIp.windowSec);
+  if (!byIp.ok) {
+    tooManyRequests(res, byIp);
+    return null;
+  }
+
+  const post = await storage.getPost(input.postId);
+  const app = post ? await findByCode(post.id, input, input.code) : null;
+
+  // 신청이 없는 것과 코드가 틀린 것을 구분해서 알려주지 않는다.
+  // "그 번호 학생이 신청했다"는 사실도 알려줄 필요가 없는 정보다.
+  if (!post || !app) {
+    res.status(404).json({
+      message: "신청 정보를 찾을 수 없습니다. 학년·반·번호와 확인코드를 확인해 주세요.",
+    });
+    return null;
+  }
+
+  await Promise.all([resetLimit(studentKey), resetLimit(ipKey)]);
+  return { post, app };
 }
 
 export async function registerRoutes(
@@ -287,6 +406,117 @@ export async function registerRoutes(
     res.status(204).end();
   });
 
+
+  // ── 활동 신청 (학생용, 공개 경로) ─────────────────────────
+  // 계정을 만들지 않는다는 설계 결정 때문에 인증이 없다. 대신
+  //  - 요청 제한 (rateLimit.ts)
+  //  - (활동, 학년, 반, 번호) 유니크 제약
+  //  - 활동별 신청 비밀번호(선택)
+  // 이 세 가지가 방어선이다. 하나라도 빼면 안 된다.
+
+  app.post(api.applications.apply.path, async (req, res) => {
+    maybePrune();
+
+    const ip = clientIp(req);
+    const ipGate = await hitLimit(
+      `apply:ip:${ip}`,
+      LIMITS.applyPerIp.limit,
+      LIMITS.applyPerIp.windowSec
+    );
+    if (!ipGate.ok) return tooManyRequests(res, ipGate);
+
+    const post = await loadActivity(req, res);
+    if (!post) return;
+
+    let input;
+    try {
+      input = api.applications.apply.input.parse(req.body);
+    } catch (err) {
+      return badRequest(res, err);
+    }
+
+    // 화면의 배지와 같은 판정을 쓴다 (shared/activity.ts).
+    // 규칙이 갈라지면 "신청 받는 중"으로 보이는데 서버가 거부하는 상황이 된다.
+    const stage = activityStage(post);
+    if (stage !== "open") {
+      return res.status(400).json({ message: STAGE_REJECT_MESSAGE[stage] });
+    }
+
+    if (post.applyPasswordHash) {
+      const pwKey = `apply:pw:${ip}`;
+      const ok =
+        !!input.applyPassword &&
+        verifyApplyPassword(input.applyPassword, post.applyPasswordHash);
+
+      // 시도할 때마다 세고 맞히면 지운다. 결과적으로 연속 실패만 누적된다.
+      const pwGate = await hitLimit(
+        pwKey,
+        LIMITS.applyPasswordFail.limit,
+        LIMITS.applyPasswordFail.windowSec
+      );
+      if (!pwGate.ok) return tooManyRequests(res, pwGate);
+
+      if (!ok) {
+        return res
+          .status(403)
+          .json({ message: "신청 비밀번호가 맞지 않습니다.", field: "applyPassword" });
+      }
+      await resetLimit(pwKey);
+    }
+
+    const { applyPassword: _pw, agree: _agree, ...applicant } = input;
+    const result = await applyToPost(post, applicant);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+
+    // 평문 확인코드가 실리는 유일한 응답이다. 다시 알려줄 방법은 없다.
+    res.status(201).json({
+      code: result.code,
+      application: toMyApplication(result.application, result.waitlistPosition),
+      summary: await summaryFor(post),
+    });
+  });
+
+  app.post(api.applications.lookup.path, async (req, res) => {
+    const verified = await verifiedApplication(req, res);
+    if (!verified) return;
+    res.json({
+      application: toMyApplication(verified.app, await positionOf(verified.app)),
+      summary: await summaryFor(verified.post),
+    });
+  });
+
+  app.post(api.applications.cancel.path, async (req, res) => {
+    const verified = await verifiedApplication(req, res);
+    if (!verified) return;
+
+    const stage = activityStage(verified.post);
+    if (stage === "ended") {
+      return res.status(400).json({
+        message: "종료된 활동은 취소할 수 없습니다. 담당 선생님께 문의해 주세요.",
+      });
+    }
+
+    const { promoted } = await cancelApplication(verified.post, verified.app);
+    res.json({ cancelled: true, promoted, summary: await summaryFor(verified.post) });
+  });
+
+  // 집계만 내려보낸다. 개별 신청자는 어떤 경우에도 포함하지 않는다.
+  app.get(api.applications.summary.path, async (req, res) => {
+    const post = await loadActivity(req, res);
+    if (!post) return;
+    res.json(await summaryFor(post));
+  });
+
+  app.get(api.applications.summaries.path, async (_req, res) => {
+    try {
+      res.json(await summariesForAll());
+    } catch (err) {
+      console.error("applications summary error:", err);
+      res.status(500).json({ message: "신청 현황을 불러올 수 없습니다." });
+    }
+  });
 
   // ── 팝업 CRUD ────────────────────────────────────────────
   app.get("/api/popups", async (_req, res) => {

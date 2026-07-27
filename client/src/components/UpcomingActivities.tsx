@@ -4,7 +4,7 @@ import { ko } from "date-fns/locale";
 import { CalendarClock, MapPin, Users, ArrowRight, Timer } from "lucide-react";
 import { motion } from "framer-motion";
 import { usePosts } from "@/hooks/use-posts";
-import { activityStage, applyClosesAt } from "@/components/ActivityInfo";
+import { activityStage, applyClosesAt } from "@shared/activity";
 import { type PublicPost } from "@shared/schema";
 
 /**

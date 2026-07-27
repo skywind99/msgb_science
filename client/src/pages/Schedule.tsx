@@ -4,10 +4,12 @@ import { format, isSameDay } from "date-fns";
 import { ko } from "date-fns/locale";
 import { CalendarDays, MapPin, Users, Timer, Lock, ChevronRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
 import { usePosts } from "@/hooks/use-posts";
-import { activityStage, applyClosesAt } from "@/components/ActivityInfo";
+import { activityStage, applyClosesAt } from "@shared/activity";
+import { api } from "@shared/routes";
 import { NAV_ITEMS } from "@/components/Navigation";
-import { type PublicPost } from "@shared/schema";
+import { type ApplicationSummary, type PublicPost } from "@shared/schema";
 
 /**
  * 활동 일정.
@@ -29,7 +31,7 @@ const STAGE_STYLE: Record<string, { label: string; className: string }> = {
 
 const startOf = (p: PublicPost) => (p.eventStart ? new Date(p.eventStart) : null);
 
-function ActivityRow({ post }: { post: PublicPost }) {
+function ActivityRow({ post, summary }: { post: PublicPost; summary?: ApplicationSummary }) {
   const start = startOf(post);
   const end = post.eventEnd ? new Date(post.eventEnd) : null;
   const closes = applyClosesAt(post);
@@ -88,7 +90,23 @@ function ActivityRow({ post }: { post: PublicPost }) {
             </span>
           )}
           <span className="flex items-center gap-1">
-            <Users className="w-3 h-3" /> {post.capacity == null ? "제한 없음" : `${post.capacity}명`}
+            <Users className="w-3 h-3" />
+            {post.capacity == null
+              ? summary && summary.applied > 0
+                ? `${summary.applied}명 신청`
+                : "제한 없음"
+              : summary
+                ? `${summary.applied} / ${post.capacity}명`
+                : `${post.capacity}명`}
+            {summary && post.capacity != null && stage === "open" && (
+              <span
+                className={`font-bold ${
+                  summary.remaining === 0 ? "text-destructive" : "text-primary"
+                }`}
+              >
+                {summary.remaining === 0 ? "정원 마감" : `${summary.remaining}자리`}
+              </span>
+            )}
           </span>
           {stage === "open" && closes && (
             <span className="flex items-center gap-1 font-semibold text-primary">
@@ -106,6 +124,16 @@ function ActivityRow({ post }: { post: PublicPost }) {
 export default function Schedule() {
   const { data: posts, isLoading } = usePosts();
   const [showPast, setShowPast] = useState(false);
+
+  // 남은 자리는 활동마다 따로 묻지 않고 한 번에 받는다. 집계라 개인정보가 없다.
+  const { data: summaries } = useQuery<ApplicationSummary[]>({
+    queryKey: [api.applications.summaries.path],
+    staleTime: 60_000,
+  });
+  const summaryByPost = useMemo(
+    () => new Map((summaries ?? []).map((s) => [s.postId, s])),
+    [summaries]
+  );
 
   const { upcoming, past } = useMemo(() => {
     const activities = (posts ?? []).filter((p) => p.applyEnabled && p.eventStart);
@@ -159,7 +187,7 @@ export default function Schedule() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: Math.min(idx, 6) * 0.05 }}
                   >
-                    <ActivityRow post={post} />
+                    <ActivityRow post={post} summary={summaryByPost.get(post.id)} />
                   </motion.div>
                 ))
               ) : (
@@ -184,7 +212,7 @@ export default function Schedule() {
                 {showPast && (
                   <div className="space-y-3 opacity-70">
                     {past.map((post) => (
-                      <ActivityRow key={post.id} post={post} />
+                      <ActivityRow key={post.id} post={post} summary={summaryByPost.get(post.id)} />
                     ))}
                   </div>
                 )}

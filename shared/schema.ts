@@ -215,9 +215,14 @@ export const insertApplicationSchema = createInsertSchema(applications, {
   status: true,   // 서버가 정원을 보고 정한다
 });
 
-// 신청 폼이 실제로 보내는 형태
-export const applyRequestSchema = insertApplicationSchema.extend({
+// 신청 폼이 실제로 보내는 형태.
+// postId 는 URL 에서 받으므로 본문에서는 빼둔다. 둘이 어긋날 여지를 없앤다.
+export const applyRequestSchema = insertApplicationSchema.omit({ postId: true }).extend({
   applyPassword: z.string().max(50).optional(), // 비밀번호가 걸린 활동일 때만
+  // 수집 항목·보유기간 고지에 대한 동의. 체크하지 않으면 접수하지 않는다.
+  agree: z.literal(true, {
+    errorMap: () => ({ message: "개인정보 수집·이용에 동의해야 신청할 수 있습니다." }),
+  }),
 });
 
 // 본인 신청 조회·취소
@@ -241,9 +246,76 @@ export type ApplicationSummary = {
   capacity: number | null;
   applied: number;
   waitlisted: number;
+  /** 정원이 있을 때 남은 자리. 정원 무제한이면 null. */
+  remaining: number | null;
   isOpen: boolean;
   closesAt: string | null;
 };
+
+/**
+ * 신청한 학생 본인에게만 내려보내는 형태.
+ * 확인코드 해시는 물론이고, 다른 신청자의 정보는 어떤 경우에도 포함하지 않는다.
+ */
+export type MyApplication = {
+  postId: number;
+  grade: number;
+  classNo: number;
+  studentNo: number;
+  name: string;
+  memo: string | null;
+  status: "applied" | "waitlisted";
+  createdAt: string | null;
+  /** 대기자일 때 앞에 몇 명이 있는지. 신청 확정이면 null. */
+  waitlistPosition: number | null;
+};
+
+export function toMyApplication(
+  app: Application,
+  waitlistPosition: number | null = null
+): MyApplication {
+  return {
+    postId: app.postId,
+    grade: app.grade,
+    classNo: app.classNo,
+    studentNo: app.studentNo,
+    name: app.name,
+    memo: app.memo,
+    status: app.status === "waitlisted" ? "waitlisted" : "applied",
+    createdAt: app.createdAt ? app.createdAt.toISOString() : null,
+    waitlistPosition,
+  };
+}
+
+/** 신청 완료 응답. 평문 확인코드가 실리는 유일한 곳이다. */
+export type ApplyResponse = {
+  code: string;
+  application: MyApplication;
+  summary: ApplicationSummary;
+};
+
+export type LookupResponse = {
+  application: MyApplication;
+  summary: ApplicationSummary;
+};
+
+export type CancelResponse = {
+  cancelled: true;
+  /** 빈 자리에 대기자가 올라갔는지 */
+  promoted: boolean;
+  summary: ApplicationSummary;
+};
+
+// ── 요청 제한 카운터 ──────────────────────────────────────
+// 서버리스에서는 모듈 전역 변수가 인스턴스마다 따로 놀아 카운터로 쓸 수 없다
+// (뉴스 캐시가 같은 이유로 무효다). 그래서 DB 에 둔다.
+//
+// key 는 원문이 아니라 해시를 넣는다. 원문에는 IP 나 학년·반·번호가 들어가므로
+// 요청 제한 테이블이 또 하나의 개인정보 보관소가 되면 안 된다.
+export const rateLimits = pgTable("rate_limits", {
+  key: text("key").primaryKey(),
+  count: integer("count").notNull().default(0),
+  windowStart: timestamp("window_start").notNull().defaultNow(),
+});
 
 // ── 팝업 ──────────────────────────────────────────────────
 export const popups = pgTable("popups", {

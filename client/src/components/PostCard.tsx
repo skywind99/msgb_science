@@ -3,7 +3,7 @@ import { type PublicPost, type ContentBlock } from "@shared/schema";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { Calendar, ChevronRight, Microscope, FlaskConical, BookOpen, Rocket, Users, Globe, CalendarClock } from "lucide-react";
-import { activityStage } from "@/components/ActivityInfo";
+import { activityStage } from "@shared/activity";
 
 const CATEGORY_META: Record<string, { icon: React.ReactNode; from: string; to: string }> = {
   home:             { icon: <Microscope className="w-14 h-14 text-white/80" />, from: "from-blue-500",    to: "to-indigo-600" },
