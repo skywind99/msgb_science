@@ -18,7 +18,7 @@ import {
   applyToPost,
   cancelApplication,
   findApplicationWithPost,
-  findByCode,
+  findByPassword,
   listApplications,
   positionOf,
   removeApplication,
@@ -221,12 +221,18 @@ async function loadOwnedApplication(
 }
 
 /**
- * 학년·반·번호 + 확인코드로 본인을 확인한다. 조회와 취소가 같이 쓴다.
+ * 학년·반·번호 + 확인 비밀번호로 본인을 확인한다. 조회와 취소가 같이 쓴다.
  *
- * 요청 제한이 이 함수의 핵심이다. 확인코드는 6자리(100만 가지)라
- * 제한이 없으면 하루면 전교생 명단이 털린다. 학생 단위와 IP 단위를 함께 걸고,
- * 맞힌 뒤에는 카운터를 지워 정상 사용자가 막히지 않게 한다.
- * 학교는 한 반이 같은 공용 IP 로 나오므로 이 초기화가 없으면 정상 조회가 서로를 막는다.
+ * 요청 제한이 이 함수의 핵심이다. 비밀번호는 학생이 직접 정한 값이라
+ * 랜덤 코드보다 약하다. 제한이 없으면 같은 반 친구가 몇 번 찍어서 남의 신청을
+ * 취소할 수 있다. 학생 단위와 IP 단위를 함께 걸고, 맞힌 뒤에는 카운터를 지워
+ * 정상 사용자가 막히지 않게 한다.
+ *
+ * **조회와 취소가 같은 카운터를 쓰는 것이 중요하다.** 따로 걸면 느슨한 쪽에서
+ * 비밀번호를 알아낸 다음 다른 쪽으로 넘어가면 되므로 제한이 무의미해진다.
+ *
+ * 학교는 한 반이 같은 공용 IP 로 나오므로 성공 시 초기화가 없으면
+ * 정상 조회가 서로를 막는다.
  */
 async function verifiedApplication(
   req: Request,
@@ -263,13 +269,13 @@ async function verifiedApplication(
   }
 
   const post = await storage.getPost(input.postId);
-  const app = post ? await findByCode(post.id, input, input.code) : null;
+  const app = post ? await findByPassword(post.id, input, input.studentPassword) : null;
 
-  // 신청이 없는 것과 코드가 틀린 것을 구분해서 알려주지 않는다.
+  // 신청이 없는 것과 비밀번호가 틀린 것을 구분해서 알려주지 않는다.
   // "그 번호 학생이 신청했다"는 사실도 알려줄 필요가 없는 정보다.
   if (!post || !app) {
     res.status(404).json({
-      message: "신청 정보를 찾을 수 없습니다. 학년·반·번호와 확인코드를 확인해 주세요.",
+      message: "신청 정보를 찾을 수 없습니다. 학년·반·번호와 확인 비밀번호를 확인해 주세요.",
     });
     return null;
   }
@@ -527,15 +533,15 @@ export async function registerRoutes(
       await resetLimit(pwKey);
     }
 
+    // 활동 비밀번호(교사가 걸어둔 것)는 저장하지 않는다.
+    // studentPassword 는 applyToPost 안에서 해싱해 저장한다.
     const { applyPassword: _pw, agree: _agree, ...applicant } = input;
     const result = await applyToPost(post, applicant);
     if (!result.ok) {
       return res.status(result.status).json({ message: result.message });
     }
 
-    // 평문 확인코드가 실리는 유일한 응답이다. 다시 알려줄 방법은 없다.
     res.status(201).json({
-      code: result.code,
       application: toMyApplication(result.application, result.waitlistPosition),
       summary: await summaryFor(post),
     });

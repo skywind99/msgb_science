@@ -1,4 +1,4 @@
-import { randomBytes, randomInt, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 /**
  * 활동별 신청 비밀번호 해싱.
@@ -30,19 +30,14 @@ export function verifyApplyPassword(plain: string, stored: string): boolean {
 }
 
 /**
- * 신청 확인코드 6자리 생성.
+ * 학생이 정한 확인 비밀번호도 같은 scrypt 형식으로 저장한다.
  *
- * 학생이 외우거나 적어둘 수 있어야 해서 6자리다. 대신 짧으므로
- * 저장은 해시로만 하고, 조회 API 에 요청 제한을 반드시 함께 건다
- * (`server/rateLimit.ts` 의 `lookupPerStudent`).
+ * 원래는 서버가 6자리 랜덤 코드를 발급했다(`generateApplyCode`). 학생이 외우기
+ * 어렵다는 이유로 직접 정하는 방식으로 바꿨고, 랜덤 생성 함수는 제거했다.
  *
- * `Math.random` 대신 `randomInt` 를 쓴다. 예측 가능한 코드는 해시로 저장해도
- * 의미가 없다. 0 으로 시작하는 코드도 유효하므로 앞을 채운다.
+ * 학생이 정한 값은 랜덤보다 약하다. 추측하기 쉬운 값은
+ * `shared/studentSecret.ts` 에서 거부하고, 조회 실패 횟수는
+ * `server/rateLimit.ts` 의 `lookupPerStudent` 로 제한한다. 둘 다 필요하다.
  */
-export function generateApplyCode(): string {
-  return String(randomInt(0, 1_000_000)).padStart(6, "0");
-}
-
-/** 확인코드도 같은 scrypt 형식으로 저장한다. */
-export const hashApplyCode = hashApplyPassword;
-export const verifyApplyCode = verifyApplyPassword;
+export const hashStudentPassword = hashApplyPassword;
+export const verifyStudentPassword = verifyApplyPassword;

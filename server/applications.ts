@@ -8,14 +8,14 @@ import {
   type Post,
 } from "../shared/schema.js";
 import { activityStage, applyClosesAt } from "../shared/activity.js";
-import { generateApplyCode, hashApplyCode, verifyApplyCode } from "./applyPassword.js";
+import { hashStudentPassword, verifyStudentPassword } from "./applyPassword.js";
 
 /**
  * 활동 신청 처리.
  *
  * 개인정보 원칙상 이 모듈 밖으로 개별 신청자가 나가는 경로는 두 개뿐이다.
  * - 신청 직후 본인에게 돌려주는 응답
- * - 학년·반·번호 + 확인코드가 맞은 조회
+ * - 학년·반·번호 + 확인 비밀번호가 맞은 조회
  * 그 외 공개 API 는 `summaryFor` / `summariesForAll` 의 집계만 쓴다.
  */
 
@@ -31,10 +31,12 @@ type ApplicantInput = {
   studentNo: number;
   name: string;
   memo?: string | null;
+  /** 학생이 직접 정한 확인 비밀번호. 해시만 저장한다. */
+  studentPassword: string;
 };
 
 export type ApplyResult =
-  | { ok: true; application: Application; code: string; waitlistPosition: number | null }
+  | { ok: true; application: Application; waitlistPosition: number | null }
   | { ok: false; status: number; message: string };
 
 /** 상태별 건수. 취소는 행을 지우므로 applied / waitlisted 둘만 있다. */
@@ -88,8 +90,9 @@ function isUniqueViolation(err: unknown): boolean {
  * 그래서 활동 단위 자문 락으로 같은 활동의 신청을 직렬화한다.
  */
 export async function applyToPost(post: Post, input: ApplicantInput): Promise<ApplyResult> {
-  const code = generateApplyCode();
-  const codeHash = hashApplyCode(code);
+  // scrypt 는 일부러 느리다. 자문 락을 잡기 전에 해싱을 끝내서
+  // 같은 활동의 다른 신청을 기다리게 만들지 않는다.
+  const codeHash = hashStudentPassword(input.studentPassword);
 
   try {
     return await db.transaction(async (tx) => {
@@ -114,7 +117,7 @@ export async function applyToPost(post: Post, input: ApplicantInput): Promise<Ap
         return {
           ok: false as const,
           status: 409,
-          message: "이미 신청한 활동입니다. 확인코드로 조회해 주세요.",
+          message: "이미 신청한 활동입니다. 확인 비밀번호로 조회해 주세요.",
         };
       }
 
@@ -148,7 +151,6 @@ export async function applyToPost(post: Post, input: ApplicantInput): Promise<Ap
       return {
         ok: true as const,
         application: row,
-        code,
         waitlistPosition: await waitlistPosition(tx, row),
       };
     });
@@ -162,15 +164,15 @@ export async function applyToPost(post: Post, input: ApplicantInput): Promise<Ap
 }
 
 /**
- * 학년·반·번호로 신청을 찾고 확인코드를 대조한다.
+ * 학년·반·번호로 신청을 찾고 확인 비밀번호를 대조한다.
  *
- * 코드가 틀렸는지 신청이 없는지를 구분해서 알려주지 않는다.
+ * 비밀번호가 틀렸는지 신청이 없는지를 구분해서 알려주지 않는다.
  * "그 번호 학생은 신청했다"는 사실 자체가 알려줄 필요 없는 정보다.
  */
-export async function findByCode(
+export async function findByPassword(
   postId: number,
   who: { grade: number; classNo: number; studentNo: number },
-  code: string
+  password: string
 ): Promise<Application | null> {
   const [app] = await db
     .select()
@@ -186,7 +188,7 @@ export async function findByCode(
     .limit(1);
 
   if (!app) return null;
-  return verifyApplyCode(code, app.codeHash) ? app : null;
+  return verifyStudentPassword(password, app.codeHash) ? app : null;
 }
 
 export async function positionOf(app: Application): Promise<number | null> {
@@ -201,7 +203,7 @@ export async function positionOf(app: Application): Promise<number | null> {
  *
  * 자리가 비면 가장 먼저 대기한 학생을 신청 확정으로 올린다. 안 올리면
  * 나중에 신청한 학생이 빈 자리를 차지해 대기 순서가 뒤집힌다.
- * 승격된 학생은 확인코드로 조회하면 바뀐 상태를 볼 수 있다.
+ * 승격된 학생은 확인 비밀번호로 조회하면 바뀐 상태를 볼 수 있다.
  */
 export async function cancelApplication(
   post: Post,

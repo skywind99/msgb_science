@@ -202,7 +202,7 @@ export function ActivityInfo({ post }: { post: PublicPost }) {
           className="w-full py-2 text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center gap-1.5"
         >
           <Search className="w-3.5 h-3.5" />
-          확인코드로 내 신청 조회 · 취소
+          확인 비밀번호로 내 신청 조회 · 취소
         </button>
       </div>
 

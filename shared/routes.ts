@@ -70,7 +70,7 @@ export const api = {
   },
 
   // 학생용 신청 API. 계정이 없으므로 모두 공개 경로다.
-  // 개별 신청자를 반환하는 것은 확인코드가 맞은 lookup 하나뿐이다.
+  // 개별 신청자를 반환하는 것은 확인 비밀번호가 맞은 lookup 하나뿐이다.
   applications: {
     apply: {
       method: "POST" as const,

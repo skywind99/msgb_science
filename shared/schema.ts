@@ -1,6 +1,7 @@
 import { pgTable, text, serial, integer, timestamp, json, boolean, uuid, uniqueIndex, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
+import { checkStudentPassword, MAX_LENGTH } from "./studentSecret.js";
 
 // ── 게시물 본문 블록 ──────────────────────────────────────
 export const contentBlockSchema = z.object({
@@ -12,7 +13,7 @@ export type ContentBlock = z.infer<typeof contentBlockSchema>;
 
 // ── 교사 계정 ─────────────────────────────────────────────
 // Supabase Auth 의 auth.users 와 1:1. id 는 auth.users.id 를 그대로 사용한다.
-// 학생 계정은 만들지 않는다. 신청은 무계정 + 확인코드 방식.
+// 학생 계정은 만들지 않는다. 신청은 무계정 + 학생이 정한 확인 비밀번호 방식.
 export const profiles = pgTable("profiles", {
   id: uuid("id").primaryKey(),
   name: text("name").notNull(),
@@ -181,9 +182,13 @@ export function toPublicPost(post: Post): PublicPost {
 // 계정 없이 신청한다. 수집 항목은 학년·반·번호·이름 넷뿐.
 // 연락처, 이메일, 생년월일은 받지 않는다.
 //
-// 확인코드: 신청 완료 화면에 6자리 숫자를 한 번 보여주고 해시만 저장한다.
-// 학생이 본인 신청을 조회·취소할 때 학년·반·번호 + 코드로 대조한다.
-// 코드를 잃어버리면 담당 교사가 명단에서 직접 처리한다.
+// 확인 비밀번호: 학생이 신청할 때 직접 정하고, 서버는 해시만 저장한다.
+// 본인 신청을 조회·취소할 때 학년·반·번호 + 비밀번호로 대조한다.
+// 잊어버리면 담당 교사가 명단에서 직접 처리한다.
+//
+// `code_hash` 라는 열 이름은 처음에 서버가 6자리 랜덤 코드를 발급했을 때 붙은 것이다.
+// 지금 담기는 값은 학생이 정한 비밀번호의 해시다. 열 이름을 바꾸면 마이그레이션이
+// 필요해서 그대로 뒀다.
 export const applications = pgTable("applications", {
   id: serial("id").primaryKey(),
   postId: integer("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
@@ -217,21 +222,47 @@ export const insertApplicationSchema = createInsertSchema(applications, {
 
 // 신청 폼이 실제로 보내는 형태.
 // postId 는 URL 에서 받으므로 본문에서는 빼둔다. 둘이 어긋날 여지를 없앤다.
-export const applyRequestSchema = insertApplicationSchema.omit({ postId: true }).extend({
-  applyPassword: z.string().max(50).optional(), // 비밀번호가 걸린 활동일 때만
-  // 수집 항목·보유기간 고지에 대한 동의. 체크하지 않으면 접수하지 않는다.
-  agree: z.literal(true, {
-    errorMap: () => ({ message: "개인정보 수집·이용에 동의해야 신청할 수 있습니다." }),
-  }),
-});
+//
+// 비밀번호가 두 개 나오는데 주인이 다르다. 헷갈리지 말 것.
+// - `applyPassword`  : 교사가 활동에 걸어둔 것. 해당 학급에만 구두로 알려준다.
+// - `studentPassword`: 학생이 자기 신청을 조회·취소하려고 직접 정하는 것.
+export const applyRequestSchema = insertApplicationSchema
+  .omit({ postId: true })
+  .extend({
+    applyPassword: z.string().max(50).optional(),
+    studentPassword: z.string().min(1, "확인 비밀번호를 정해 주세요.").max(MAX_LENGTH),
+    // 수집 항목·보유기간 고지에 대한 동의. 체크하지 않으면 접수하지 않는다.
+    agree: z.literal(true, {
+      errorMap: () => ({ message: "개인정보 수집·이용에 동의해야 신청할 수 있습니다." }),
+    }),
+  })
+  // 추측하기 쉬운 비밀번호를 여기서 막는다. 학생이 정하는 값이라 그냥 두면
+  // 절반이 1234 나 생년월일을 쓴다. 자세한 이유는 shared/studentSecret.ts 참고.
+  .superRefine((v, ctx) => {
+    const problem = checkStudentPassword(v.studentPassword, {
+      grade: v.grade,
+      classNo: v.classNo,
+      studentNo: v.studentNo,
+    });
+    if (problem) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: problem,
+        path: ["studentPassword"],
+      });
+    }
+  });
 
-// 본인 신청 조회·취소
+// 본인 신청 조회·취소.
+// 여기서는 강도 검사를 하지 않는다. 규칙이 바뀌기 전에 만든 비밀번호로도
+// 조회할 수 있어야 하고, 검사 결과가 "이 값은 규칙에 안 맞음"이라는 힌트가 되면
+// 오히려 추측 범위를 좁혀 준다.
 export const lookupApplicationSchema = z.object({
   postId: z.number().int(),
   grade: z.number().int().min(1).max(3),
   classNo: z.number().int().min(1).max(20),
   studentNo: z.number().int().min(1).max(50),
-  code: z.string().regex(/^\d{6}$/, "확인코드는 6자리 숫자입니다."),
+  studentPassword: z.string().min(1, "확인 비밀번호를 입력해 주세요.").max(MAX_LENGTH),
 });
 
 export type InsertApplication = z.infer<typeof insertApplicationSchema>;
@@ -254,7 +285,7 @@ export type ApplicationSummary = {
 
 /**
  * 신청한 학생 본인에게만 내려보내는 형태.
- * 확인코드 해시는 물론이고, 다른 신청자의 정보는 어떤 경우에도 포함하지 않는다.
+ * 확인 비밀번호 해시는 물론이고, 다른 신청자의 정보는 어떤 경우에도 포함하지 않는다.
  */
 export type MyApplication = {
   postId: number;
@@ -290,7 +321,8 @@ export function toMyApplication(
  * 교사용 명단 항목.
  *
  * 개별 신청자가 나가는 유일한 인증 경로다. 담당 교사와 `admin` 만 받을 수 있다.
- * 확인코드 해시는 절대 포함하지 않는다 — 6자리라 해시가 새면 바로 뚫린다.
+ * 확인 비밀번호 해시는 절대 포함하지 않는다 — 학생이 정한 값이라 해시가 새면
+ * 오프라인 대입으로 쉽게 뚫린다.
  */
 export type RosterEntry = {
   id: number;
@@ -330,9 +362,13 @@ export type RosterResponse = {
   entries: RosterEntry[];
 };
 
-/** 신청 완료 응답. 평문 확인코드가 실리는 유일한 곳이다. */
+/**
+ * 신청 완료 응답.
+ *
+ * 비밀번호는 학생이 직접 정한 값이라 되돌려줄 필요가 없다.
+ * 서버는 해시만 갖고 있으므로 돌려줄 수도 없다.
+ */
 export type ApplyResponse = {
-  code: string;
   application: MyApplication;
   summary: ApplicationSummary;
 };

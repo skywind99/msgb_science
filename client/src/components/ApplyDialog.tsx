@@ -1,17 +1,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  X,
-  Loader2,
-  Check,
-  Copy,
-  KeyRound,
-  Lock,
-  ShieldCheck,
-  Trash2,
-  TriangleAlert,
-} from "lucide-react";
+import { X, Loader2, KeyRound, Lock, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { api, buildUrl } from "@shared/routes";
 import type {
   ApplyResponse,
@@ -20,14 +10,19 @@ import type {
   MyApplication,
   PublicPost,
 } from "@shared/schema";
+import { checkStudentPassword, MAX_LENGTH } from "@shared/studentSecret";
 import { useToast } from "@/hooks/use-toast";
 
 /**
  * 학생용 신청 · 조회 화면.
  *
- * 계정이 없으므로 신청의 증거는 6자리 확인코드 하나뿐이다.
- * 완료 화면에서 이 번호를 반드시 눈에 띄게 보여주고, 다시 알려줄 방법이
- * 없다는 것도 함께 알린다. 서버는 해시만 저장한다.
+ * 계정이 없으므로 신청의 증거는 학생이 직접 정한 확인 비밀번호 하나뿐이다.
+ * 서버는 해시만 저장하므로 잊어버리면 되돌려줄 방법이 없다 —
+ * 그때는 담당 교사가 명단에서 직접 처리한다.
+ *
+ * 비밀번호가 두 개 나오는데 주인이 다르다.
+ * - 활동 비밀번호 : 교사가 학급에만 알려주는 것. 신청 자격 확인용.
+ * - 확인 비밀번호 : 학생이 정하는 것. 본인 조회·취소용.
  */
 
 const inputClass =
@@ -198,36 +193,23 @@ function StatusLine({ app }: { app: MyApplication }) {
   );
 }
 
-/** 확인코드는 여기서 한 번만 보여줄 수 있다. 서버는 해시만 갖고 있다. */
-function CodeCard({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // 클립보드를 못 쓰는 브라우저도 있다. 숫자는 화면에 그대로 보이므로 그냥 넘어간다.
-    }
-  };
-
+/**
+ * 신청 완료 안내.
+ *
+ * 비밀번호는 학생이 직접 정한 값이라 여기서 다시 보여줄 필요가 없다.
+ * 서버는 해시만 갖고 있으므로 보여줄 수도 없다.
+ */
+function RememberCard() {
   return (
-    <div className="rounded-xl border-2 border-primary/30 bg-primary/[0.04] p-4 text-center space-y-2">
-      <div className="text-xs font-bold text-primary">확인코드</div>
-      <div className="font-mono text-4xl font-bold tracking-[0.2em] text-foreground">{code}</div>
-      <button
-        type="button"
-        onClick={copy}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
-      >
-        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        {copied ? "복사했습니다" : "복사하기"}
-      </button>
-      <p className="text-xs text-destructive font-semibold pt-1">
-        이 번호를 꼭 저장해 두세요. 다시 알려드릴 수 없습니다.
-      </p>
+    <div className="rounded-xl border-2 border-primary/30 bg-primary/[0.04] p-4 space-y-2">
+      <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+        <KeyRound className="w-3.5 h-3.5" />
+        방금 정한 확인 비밀번호를 기억해 두세요
+      </div>
       <p className="text-xs text-muted-foreground">
-        신청 내용을 확인하거나 취소할 때 필요합니다. 잊어버렸으면 담당 선생님께 문의하세요.
+        신청 내용을 확인하거나 취소할 때 학년·반·번호와 함께 필요합니다.
+        선생님도 비밀번호를 볼 수 없으니, 잊어버렸으면 담당 선생님께 말씀드려
+        명단에서 직접 처리를 받아야 합니다.
       </p>
     </div>
   );
@@ -253,12 +235,31 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
   const [who, setWho] = useState<Who>(emptyWho);
   const [name, setName] = useState("");
   const [memo, setMemo] = useState("");
-  const [password, setPassword] = useState("");
+  const [activityPassword, setActivityPassword] = useState("");
+  const [myPassword, setMyPassword] = useState("");
+  const [myPasswordAgain, setMyPasswordAgain] = useState("");
   const [agree, setAgree] = useState(false);
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState<ApplyResponse | null>(null);
 
-  const canSubmit = whoFilled(who) && name.trim().length >= 2 && agree && !pending;
+  // 서버와 같은 함수로 검사한다. 규칙이 갈라지면 화면은 통과인데 서버가 400 을 준다.
+  // 학년·반·번호가 다 채워졌을 때만 "학번을 그대로 쓴 경우"까지 걸러낼 수 있다.
+  const passwordProblem =
+    myPassword.length === 0
+      ? null
+      : checkStudentPassword(myPassword, whoFilled(who) ? whoToNumbers(who) : undefined);
+
+  const mismatch =
+    myPasswordAgain.length > 0 && myPassword.trim() !== myPasswordAgain.trim();
+
+  const canSubmit =
+    whoFilled(who) &&
+    name.trim().length >= 2 &&
+    myPassword.length > 0 &&
+    !passwordProblem &&
+    myPasswordAgain.trim() === myPassword.trim() &&
+    agree &&
+    !pending;
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -271,8 +272,9 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
           ...whoToNumbers(who),
           name: name.trim(),
           memo: memo.trim() || undefined,
+          studentPassword: myPassword.trim(),
           agree: true,
-          ...(post.hasApplyPassword ? { applyPassword: password } : {}),
+          ...(post.hasApplyPassword ? { applyPassword: activityPassword } : {}),
         }
       );
       setDone(result);
@@ -297,10 +299,10 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
             <p className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
               <TriangleAlert className="w-4 h-4 shrink-0 mt-0.5" />
               정원이 찼기 때문에 대기자로 등록되었습니다. 앞 순번이 취소하면 자동으로
-              신청 확정으로 바뀝니다. 확인코드로 조회하면 바뀐 상태를 볼 수 있습니다.
+              신청 확정으로 바뀝니다. 확인 비밀번호로 조회하면 바뀐 상태를 볼 수 있습니다.
             </p>
           )}
-          <CodeCard code={done.code} />
+          <RememberCard />
           <button
             type="button"
             onClick={onClose}
@@ -343,13 +345,13 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
         </Field>
 
         {post.hasApplyPassword && (
-          <Field label="신청 비밀번호">
+          <Field label="활동 비밀번호">
             <div className="relative">
               <Lock className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
                 type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={activityPassword}
+                onChange={(e) => setActivityPassword(e.target.value)}
                 placeholder="선생님이 알려주신 비밀번호"
                 maxLength={50}
                 disabled={pending}
@@ -358,6 +360,51 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
             </div>
           </Field>
         )}
+
+        {/* 학생이 직접 정하는 확인 비밀번호. 위의 활동 비밀번호와 주인이 다르다. */}
+        <div className="rounded-lg border-2 border-primary/25 bg-primary/[0.03] p-3 space-y-3">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-primary">
+            <KeyRound className="w-3.5 h-3.5" />
+            내 확인 비밀번호 정하기
+          </div>
+          <p className="text-xs text-muted-foreground">
+            나중에 신청 내용을 확인하거나 취소할 때 쓰는 <b>나만의 비밀번호</b>입니다.
+            직접 정하고 꼭 기억해 주세요. "우리반최고" 처럼 기억하기 쉬운 한국어 단어가
+            네 자리 숫자보다 안전합니다.
+          </p>
+
+          <Field label="확인 비밀번호">
+            <input
+              type="password"
+              value={myPassword}
+              onChange={(e) => setMyPassword(e.target.value)}
+              placeholder="4자 이상 (숫자만 쓸 때는 6자 이상)"
+              maxLength={MAX_LENGTH}
+              disabled={pending}
+              className={inputClass}
+            />
+          </Field>
+          {passwordProblem && (
+            <p className="text-xs font-semibold text-destructive">{passwordProblem}</p>
+          )}
+
+          <Field label="한 번 더 입력">
+            <input
+              type="password"
+              value={myPasswordAgain}
+              onChange={(e) => setMyPasswordAgain(e.target.value)}
+              placeholder="같은 비밀번호를 다시"
+              maxLength={MAX_LENGTH}
+              disabled={pending}
+              className={inputClass}
+            />
+          </Field>
+          {mismatch && (
+            <p className="text-xs font-semibold text-destructive">
+              두 비밀번호가 다릅니다.
+            </p>
+          )}
+        </div>
 
         {/* 개인정보 수집 고지. 항목을 늘리려면 여기 문구도 함께 고쳐야 한다. */}
         <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
@@ -404,14 +451,16 @@ export function LookupDialog({ post, onClose }: { post: PublicPost; onClose: () 
   const refresh = useRefreshSummary(post.id);
 
   const [who, setWho] = useState<Who>(emptyWho);
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [found, setFound] = useState<LookupResponse | null>(null);
   const [cancelled, setCancelled] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  const body = () => ({ postId: post.id, ...whoToNumbers(who), code });
-  const canSubmit = whoFilled(who) && /^\d{6}$/.test(code) && !pending;
+  // 여기서는 비밀번호 강도를 검사하지 않는다. 규칙이 바뀌기 전에 만든 비밀번호로도
+  // 조회할 수 있어야 하고, 검사 결과가 추측 범위를 좁혀 주는 힌트가 되면 안 된다.
+  const body = () => ({ postId: post.id, ...whoToNumbers(who), studentPassword: password });
+  const canSubmit = whoFilled(who) && password.trim().length > 0 && !pending;
 
   const lookup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -461,7 +510,7 @@ export function LookupDialog({ post, onClose }: { post: PublicPost; onClose: () 
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
             신청 기록을 삭제했습니다. 다시 신청하려면 마감 전에 새로 신청해 주세요.
-            새 확인코드가 발급됩니다.
+            비밀번호도 새로 정하게 됩니다.
           </p>
           <button
             type="button"
@@ -533,24 +582,25 @@ export function LookupDialog({ post, onClose }: { post: PublicPost; onClose: () 
       <form onSubmit={lookup} className="space-y-4">
         <StudentIdFields value={who} onChange={setWho} disabled={pending} />
 
-        <Field label="확인코드 6자리">
+        <Field label="확인 비밀번호">
           <div className="relative">
             <KeyRound className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
             <input
-              type="text"
-              inputMode="numeric"
-              value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              placeholder="000000"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="신청할 때 정한 비밀번호"
+              maxLength={MAX_LENGTH}
               disabled={pending}
-              className={`${inputClass} pl-8 font-mono tracking-[0.2em]`}
+              className={`${inputClass} pl-8`}
             />
           </div>
         </Field>
 
         <p className="text-xs text-muted-foreground">
-          신청할 때 받은 6자리 번호입니다. 여러 번 틀리면 잠시 조회가 막힙니다.
-          코드를 잊어버렸으면 담당 선생님께 문의해 주세요.
+          신청할 때 직접 정한 비밀번호입니다. 여러 번 틀리면 10분 정도 조회가 막힙니다.
+          잊어버렸으면 담당 선생님께 문의해 주세요 — 선생님도 비밀번호를 볼 수는 없지만
+          명단에서 직접 처리해 주실 수 있습니다.
         </p>
 
         <button
