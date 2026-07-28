@@ -135,6 +135,9 @@ export default function Schedule() {
     [summaries]
   );
 
+  // 상단 메뉴 배지와 같은 숫자를 같은 자료에서 뽑는다. 두 곳이 어긋나면 혼란스럽다.
+  const openCount = (summaries ?? []).filter((s) => s.isOpen).length;
+
   const { upcoming, past } = useMemo(() => {
     const activities = (posts ?? []).filter((p) => p.applyEnabled && p.eventStart);
     const now = new Date();
@@ -156,9 +159,21 @@ export default function Schedule() {
     <div className="min-h-screen bg-background pb-20">
       <div className="bg-gradient-to-br from-primary/8 via-background to-blue-50/40 border-b border-primary/10 pt-14 pb-10">
         <div className="max-w-3xl mx-auto px-4">
-          <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">활동 일정</h1>
+          {/* 메뉴 라벨과 같은 말을 쓴다. "활동 신청" 을 눌렀는데 "활동 일정" 이 나오면
+              같은 곳인지 헷갈린다. */}
+          <h1 className="text-3xl md:text-4xl font-black text-foreground mb-3">활동 신청</h1>
           <p className="text-muted-foreground">
-            과학중점과정의 모든 활동을 날짜순으로 모았습니다.
+            {openCount > 0 ? (
+              <>
+                지금 <b className="text-primary">{openCount}건</b>을 신청할 수 있습니다.
+                과학중점과정의 모든 활동을 날짜순으로 모았습니다.
+              </>
+            ) : (
+              <>
+                지금은 신청받는 활동이 없습니다.
+                과학중점과정의 모든 활동을 날짜순으로 모았습니다.
+              </>
+            )}
           </p>
         </div>
       </div>

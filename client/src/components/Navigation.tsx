@@ -2,6 +2,9 @@ import { Link, useLocation } from "wouter";
 import { Microscope, Menu, X, Lock, LogOut, ShieldCheck, HardDrive } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@shared/routes";
+import type { ApplicationSummary } from "@shared/schema";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
@@ -9,13 +12,47 @@ import { InviteManager } from "@/components/InviteManager";
 
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
-  { id: "schedule", label: "활동 일정", path: "/schedule" },
+  // "일정" 은 보기만 하는 곳처럼 들려서 "신청" 으로 바꿨다. 옆의 숫자(지금 신청할 수
+  // 있는 활동 수)와 함께 학생이 메뉴만 보고도 새 활동이 열린 걸 알아채게 하려는 것.
+  // 경로는 `/schedule` 그대로다 — 이미 나간 링크가 깨지면 안 된다.
+  { id: "schedule", label: "활동 신청", path: "/schedule" },
   { id: "lab_intro", label: "과학실 소개", path: "/lab" },
   { id: "science_class", label: "과학중점반활동", path: "/class" },
   { id: "career_program", label: "창의융합진로프로그램", path: "/career" },
   { id: "student_program", label: "학생중심프로그램", path: "/student" },
   { id: "local_community", label: "지역교육공동체활동", path: "/community" },
 ];
+
+/**
+ * 지금 신청할 수 있는 활동 수.
+ *
+ * 집계 API 만 쓴다 — 게시물 목록은 본문·블록까지 실려 무겁고, 여기서 필요한 것은
+ * 숫자 하나뿐이다. `isOpen` 판정은 서버가 `shared/activity.ts` 로 한다.
+ *
+ * 0 이면 배지를 감춘다. "0" 을 띄우면 신청할 게 있다는 착각을 준다.
+ */
+function useOpenActivityCount(): number {
+  const { data } = useQuery<ApplicationSummary[]>({
+    queryKey: [api.applications.summaries.path],
+    staleTime: 60_000,
+  });
+  return (data ?? []).filter((s) => s.isOpen).length;
+}
+
+/** 메뉴 옆 숫자. 새 활동이 열리면 늘어난다. */
+function OpenCountBadge({ count, active }: { count: number; active: boolean }) {
+  if (count === 0) return null;
+  return (
+    <span
+      aria-label={`신청할 수 있는 활동 ${count}건`}
+      className={`ml-1.5 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-bold ${
+        active ? "bg-primary text-primary-foreground" : "bg-primary/15 text-primary"
+      }`}
+    >
+      {count}
+    </span>
+  );
+}
 
 function AdminLoginModal({ onClose }: { onClose: () => void }) {
   const [pw, setPw] = useState("");
@@ -159,6 +196,7 @@ export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { isAdmin, logout, user } = useAdmin();
+  const openCount = useOpenActivityCount();
 
   return (
     <>
@@ -190,6 +228,9 @@ export function Navigation() {
                     `}
                   >
                     {item.label}
+                    {item.id === "schedule" && (
+                      <OpenCountBadge count={openCount} active={isActive} />
+                    )}
                     {isActive && (
                       <motion.div
                         layoutId="nav-indicator"
@@ -270,6 +311,9 @@ export function Navigation() {
                       `}
                     >
                       {item.label}
+                      {item.id === "schedule" && (
+                        <OpenCountBadge count={openCount} active={isActive} />
+                      )}
                     </Link>
                   );
                 })}
