@@ -19,7 +19,9 @@ import {
   createInvite,
   deleteInvite,
   listInvites,
+  listTeachers,
   lookupInvite,
+  resetTeacherPassword,
 } from "./invites.js";
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
 import {
@@ -677,6 +679,23 @@ export async function registerRoutes(
       return res.status(result.status).json({ message: result.message });
     }
     res.status(201).json({ ok: true });
+  });
+
+  // ── 교사 계정 관리 (admin 전용) ──────────────────────────
+  // 아이디 방식은 메일로 비밀번호를 재설정할 수 없다. 이 경로가 유일한 복구 수단이다.
+
+  app.get(api.teachers.list.path, requireAdmin(), async (_req, res) => {
+    res.json(await listTeachers());
+  });
+
+  app.post(api.teachers.resetPassword.path, requireAdmin(), async (req, res) => {
+    const id = String(req.params.id);
+    const result = await resetTeacherPassword(id);
+    if (!result.ok) {
+      return res.status(result.status).json({ message: result.message });
+    }
+    // 임시 비밀번호가 실리는 유일한 응답이다. 다시 볼 수 없다.
+    res.json({ loginId: result.loginId, tempPassword: result.tempPassword });
   });
 
   // ── 교사용 신청자 명단 ───────────────────────────────────

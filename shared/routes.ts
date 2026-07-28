@@ -4,6 +4,8 @@ import {
   acceptInviteSchema,
   checkInviteSchema,
   createInviteSchema,
+} from "./inviteForms.js";
+import {
   createPostSchema,
   updateApplicationSchema,
   updatePostSchema,
@@ -15,8 +17,10 @@ import {
   type InviteSummary,
   type LookupResponse,
   type PublicPost,
+  type ResetPasswordResponse,
   type RosterEntry,
   type RosterResponse,
+  type TeacherAccount,
 } from "./schema.js";
 
 export const errorSchemas = {
@@ -181,6 +185,29 @@ export const api = {
         400: errorSchemas.validation,
         409: errorSchemas.validation,
         429: errorSchemas.tooMany,
+      },
+    },
+  },
+
+  // 교사 계정 관리 (admin 전용).
+  // 아이디 방식은 메일로 비밀번호를 재설정할 수 없으므로 이 경로가 유일한 복구 수단이다.
+  teachers: {
+    list: {
+      method: "GET" as const,
+      path: "/api/teachers" as const,
+      responses: {
+        200: z.array(z.custom<TeacherAccount>()),
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
+      },
+    },
+    resetPassword: {
+      method: "POST" as const,
+      path: "/api/teachers/:id/reset-password" as const,
+      responses: {
+        200: z.custom<ResetPasswordResponse>(),
+        403: errorSchemas.notFound,
+        404: errorSchemas.notFound,
       },
     },
   },

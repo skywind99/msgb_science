@@ -2,17 +2,25 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Copy, KeyRound, Loader2, Trash2, UserPlus, X } from "lucide-react";
 import { api, buildUrl } from "@shared/routes";
-import type { CreateInviteResponse, InviteSummary } from "@shared/schema";
+import type {
+  CreateInviteResponse,
+  InviteSummary,
+  ResetPasswordResponse,
+  TeacherAccount,
+} from "@shared/schema";
 import { useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 
 /**
- * 교사 초대 발급 (관리자 전용).
+ * 교사 계정 관리 (관리자 전용).
  *
  * 자율 가입을 열지 않기로 했으므로 교사 계정은 여기서 발급한 링크로만 생긴다.
  * 링크의 평문 토큰은 발급 직후 한 번만 볼 수 있다. 서버는 해시만 저장한다.
+ *
+ * 비밀번호 재설정도 여기 있다. 교사 아이디는 받을 수 없는 도메인을 쓰므로
+ * 본인이 메일로 재설정할 수 없다. 관리자가 임시 비밀번호를 받아 직접 전달한다.
  */
 
 const inputClass =
@@ -91,6 +99,7 @@ export function InviteManager() {
   const [role, setRole] = useState<"teacher" | "admin">("teacher");
   const [days, setDays] = useState("7");
   const [fresh, setFresh] = useState<CreateInviteResponse | null>(null);
+  const [tempPassword, setTempPassword] = useState<ResetPasswordResponse | null>(null);
 
   const { data: list, isLoading } = useQuery<InviteSummary[]>({
     queryKey: [api.invites.list.path],
@@ -106,8 +115,41 @@ export function InviteManager() {
     },
   });
 
+  const { data: teachers } = useQuery<TeacherAccount[]>({
+    queryKey: [api.teachers.list.path],
+    enabled: open,
+    staleTime: 0,
+    queryFn: async () => {
+      const res = await fetch(api.teachers.list.path, { headers: authHeaders });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? "교사 계정을 불러올 수 없습니다.");
+      }
+      return res.json();
+    },
+  });
+
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: [api.invites.list.path] });
+
+  /**
+   * 비밀번호 재설정. 서버가 임시 비밀번호를 만들어 한 번만 돌려준다.
+   * 교사가 메일을 받을 수 없으므로 관리자가 직접 전달해야 한다.
+   */
+  const resetPassword = useMutation({
+    mutationFn: async (teacherId: string) => {
+      const res = await fetch(buildUrl(api.teachers.resetPassword.path, { id: teacherId }), {
+        method: "POST",
+        headers: authHeaders,
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(body?.message ?? "비밀번호를 바꾸지 못했습니다.");
+      return body as ResetPasswordResponse;
+    },
+    onSuccess: (data) => setTempPassword(data),
+    onError: (err: Error) =>
+      toast({ title: "재설정하지 못했습니다", description: err.message, variant: "destructive" }),
+  });
 
   const create = useMutation({
     mutationFn: async () => {
@@ -155,13 +197,14 @@ export function InviteManager() {
   const close = () => {
     setOpen(false);
     setFresh(null);
+    setTempPassword(null);
   };
 
   return (
     <>
       <button
         onClick={() => setOpen(true)}
-        title="교사 초대"
+        title="교사 관리"
         className="p-2 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
       >
         <UserPlus className="w-4 h-4" />
@@ -202,9 +245,9 @@ export function InviteManager() {
             >
               <div className="flex items-start justify-between gap-3 p-5 border-b bg-muted/30 shrink-0">
                 <div>
-                  <h2 className="text-lg font-bold text-foreground">교사 초대</h2>
+                  <h2 className="text-lg font-bold text-foreground">교사 관리</h2>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    자율 가입은 없습니다. 여기서 만든 링크로만 계정이 생깁니다.
+                    계정 발급과 비밀번호 재설정. 자율 가입은 없습니다.
                   </p>
                 </div>
                 <button
@@ -284,6 +327,64 @@ export function InviteManager() {
                     </button>
                   </div>
                 )}
+
+                {/* 교사 계정 목록 + 비밀번호 재설정.
+                    아이디 방식은 메일로 스스로 재설정할 수 없어 이게 유일한 복구 수단이다. */}
+                <div className={`pt-4 border-t border-border space-y-2 ${fresh ? "hidden" : ""}`}>
+                  <h3 className="text-xs font-bold text-foreground">교사 계정</h3>
+                  {tempPassword && (
+                    <div className="rounded-xl border-2 border-primary/30 bg-primary/[0.04] p-4 space-y-2">
+                      <div className="text-xs font-bold text-primary">
+                        {tempPassword.loginId} 님의 임시 비밀번호
+                      </div>
+                      <p className="font-mono text-2xl font-bold tracking-wider text-foreground text-center bg-background rounded-lg border border-border py-2">
+                        {tempPassword.tempPassword}
+                      </p>
+                      <p className="text-xs text-destructive font-semibold">
+                        지금만 볼 수 있습니다. 당사자에게 직접 전달해 주세요.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setTempPassword(null)}
+                        className="w-full py-2 rounded-lg border-2 border-border text-xs font-bold hover:bg-muted/50 transition-colors"
+                      >
+                        확인했습니다
+                      </button>
+                    </div>
+                  )}
+                  {teachers?.length === 0 && (
+                    <p className="py-4 text-center text-sm text-muted-foreground">
+                      아직 교사 계정이 없습니다.
+                    </p>
+                  )}
+                  {teachers?.map((t) => (
+                    <div
+                      key={t.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-foreground break-words">
+                          {t.name}
+                          <span className="ml-1.5 font-normal text-muted-foreground">
+                            {t.loginId}
+                          </span>
+                        </p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5">
+                          {t.role === "admin" ? "전체 관리자" : "교사"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => resetPassword.mutate(t.id)}
+                        disabled={resetPassword.isPending}
+                        className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-border text-[11px] font-bold hover:bg-muted/50 disabled:opacity-40 transition-colors"
+                      >
+                        <KeyRound className="w-3 h-3" />
+                        비밀번호 재설정
+                      </button>
+                    </div>
+                  ))}
+                </div>
 
                 <div className={`pt-4 border-t border-border space-y-2 ${fresh ? "hidden" : ""}`}>
                   <h3 className="text-xs font-bold text-foreground">발급한 초대</h3>

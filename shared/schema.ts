@@ -38,29 +38,9 @@ export const invites = pgTable("invites", {
 
 export type Invite = typeof invites.$inferSelect;
 
-// 관리자가 초대를 발급할 때
-export const createInviteSchema = z.object({
-  role: z.enum(["teacher", "admin"]).default("teacher"),
-  memo: z.string().trim().max(100, "메모가 너무 깁니다.").optional(),
-  expiresInDays: z.number().int().min(1).max(30).default(7),
-});
-
-// 초대받은 교사가 계정을 만들 때. 공개 경로다.
-export const acceptInviteSchema = z.object({
-  token: z.string().min(20).max(200),
-  email: z.string().trim().toLowerCase().email("올바른 이메일이 아닙니다.").max(200),
-  // Supabase Auth 는 bcrypt 를 쓴다. 72바이트를 넘으면 조용히 잘리므로 여기서 막는다.
-  password: z.string().min(8, "비밀번호는 8자 이상이어야 합니다.").max(72),
-  name: z.string().trim().min(2, "이름을 입력해 주세요.").max(20),
-});
-
-// 링크를 열었을 때 유효한 초대인지만 먼저 확인한다
-export const checkInviteSchema = z.object({
-  token: z.string().min(20).max(200),
-});
-
-export type CreateInviteRequest = z.infer<typeof createInviteSchema>;
-export type AcceptInviteRequest = z.infer<typeof acceptInviteSchema>;
+// 초대 요청 스키마(`createInviteSchema`, `acceptInviteSchema`, `checkInviteSchema`)는
+// `shared/inviteForms.ts` 에 있다. 아이디 규칙을 쓰기 때문이다.
+// 이 파일에서 다른 shared 모듈을 import 하면 db:push 가 깨진다 (아래 활동 신청 주석 참고).
 
 /** 관리자 화면에 보여주는 초대 정보. 토큰 해시는 내보내지 않는다. */
 export type InviteSummary = {
@@ -100,6 +80,28 @@ export type CheckInviteResponse = {
   role?: "teacher" | "admin";
   memo?: string | null;
   reason?: "notfound" | "used" | "expired";
+};
+
+/** 관리자 화면의 교사 계정 목록 */
+export type TeacherAccount = {
+  id: string;
+  /** 로그인 아이디. 내부 이메일에서 도메인을 떼어낸 값 */
+  loginId: string;
+  name: string;
+  role: "teacher" | "admin";
+  createdAt: string | null;
+};
+
+/**
+ * 비밀번호 재설정 결과.
+ *
+ * 교사는 메일을 받을 수 없는 주소를 쓰므로 스스로 재설정할 수 없다.
+ * 관리자가 임시 비밀번호를 받아 당사자에게 직접 전달한다.
+ * 평문이 실리는 유일한 응답이고 다시 볼 수 없다.
+ */
+export type ResetPasswordResponse = {
+  loginId: string;
+  tempPassword: string;
 };
 
 // ── 게시물 (공지 + 활동 겸용) ─────────────────────────────

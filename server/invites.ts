@@ -1,7 +1,13 @@
-import { createHash, randomBytes } from "node:crypto";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { createHash, randomBytes, randomInt } from "node:crypto";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "./db.js";
-import { invites, profiles, type Invite } from "../shared/schema.js";
+import {
+  invites,
+  profiles,
+  type Invite,
+  type TeacherAccount,
+} from "../shared/schema.js";
+import { toDisplayId, toLoginEmail } from "../shared/teacherId.js";
 import { createSupabaseClient } from "./imageUpload.js";
 
 declare const process: { env: Record<string, string | undefined> };
@@ -97,7 +103,7 @@ export type AcceptResult =
  */
 export async function acceptInvite(
   invite: Invite,
-  input: { email: string; password: string; name: string }
+  input: { loginId: string; password: string; name: string }
 ): Promise<AcceptResult> {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
@@ -108,10 +114,11 @@ export async function acceptInvite(
 
   const supabase = createSupabaseClient(url, key);
 
-  // 1) Auth 계정. 학교에서 쓰는 계정이라 메일 확인 절차는 건너뛴다 —
-  //    관리자가 링크를 직접 전달했다는 것이 이미 확인 절차다.
+  // 1) Auth 계정. 아이디에 받을 수 없는 도메인을 붙여 내부 이메일로 쓴다
+  //    (`shared/teacherId.ts`). 메일 확인 절차는 건너뛴다 — 애초에 받을 수 없는
+  //    주소이고, 관리자가 링크를 직접 전달했다는 것이 이미 확인 절차다.
   const created = await supabase.auth.admin.createUser({
-    email: input.email,
+    email: toLoginEmail(input.loginId),
     password: input.password,
     email_confirm: true,
   });
@@ -119,13 +126,13 @@ export async function acceptInvite(
   if (created.error || !created.data.user) {
     const raw = created.error?.message ?? "";
     console.error("[invites] 계정 생성 실패:", raw);
-    // 이미 있는 이메일인지 구분해 준다. 그 외 사유는 그대로 노출하지 않는다.
+    // 이미 쓰는 아이디인지 구분해 준다. 그 외 사유는 그대로 노출하지 않는다.
     const dup = /already|exists|registered/i.test(raw);
     return {
       ok: false,
       status: dup ? 409 : 500,
       message: dup
-        ? "이미 등록된 이메일입니다. 관리자에게 문의해 주세요."
+        ? "이미 쓰고 있는 아이디입니다. 다른 아이디를 입력해 주세요."
         : "계정을 만들지 못했습니다. 관리자에게 문의해 주세요.",
     };
   }
@@ -172,3 +179,103 @@ export async function acceptInvite(
 
   return { ok: true, userId };
 }
+
+/**
+ * 교사 계정 목록.
+ *
+ * 로그인 아이디는 `auth.users.email` 에 있다. 드리즐 스키마는 `public` 만 다루므로
+ * 여기서는 raw SQL 로 조인한다. `profiles` 에 아이디를 복사해 두면 두 곳이
+ * 어긋날 수 있어 원본을 그대로 읽는다.
+ */
+export async function listTeachers(): Promise<TeacherAccount[]> {
+  const result = await db.execute(sql`
+    select p.id, p.name, p.role, p.created_at, u.email
+    from profiles p
+    join auth.users u on u.id = p.id
+    order by p.created_at nulls last, p.name
+  `);
+
+  const rows =
+    (result as unknown as {
+      rows?: Array<{
+        id: string;
+        name: string;
+        role: string;
+        created_at: Date | string | null;
+        email: string;
+      }>;
+    }).rows ?? [];
+
+  return rows.map((r) => ({
+    id: r.id,
+    loginId: toDisplayId(r.email),
+    name: r.name,
+    role: r.role === "admin" ? "admin" : "teacher",
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
+  }));
+}
+
+/**
+ * 읽기 쉬운 임시 비밀번호.
+ *
+ * 관리자가 교사에게 구두나 메모로 전달하므로 헷갈리는 글자를 뺀다 —
+ * 0/O, 1/l/I 를 섞어 놓으면 "영이야 오야" 문의가 그대로 발생한다.
+ */
+function generateTempPassword(): string {
+  const alphabet = "abcdefghjkmnpqrstuvwxyz23456789";
+  let out = "";
+  for (let i = 0; i < 10; i++) {
+    out += alphabet[randomInt(0, alphabet.length)];
+  }
+  return out;
+}
+
+export type ResetResult =
+  | { ok: true; loginId: string; tempPassword: string }
+  | { ok: false; status: number; message: string };
+
+/**
+ * 관리자가 교사 비밀번호를 재설정한다.
+ *
+ * 교사는 받을 수 없는 주소를 쓰므로 메일로 스스로 재설정할 수 없다
+ * (`shared/teacherId.ts` 의 대가). 이 경로가 유일한 복구 수단이다.
+ *
+ * 임시 비밀번호를 서버가 만들어 한 번만 돌려준다. 관리자가 정하게 하면
+ * 결국 흔한 값을 쓴다.
+ */
+export async function resetTeacherPassword(teacherId: string): Promise<ResetResult> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY;
+  if (!url || !key) {
+    return { ok: false, status: 500, message: "서버 설정이 완료되지 않았습니다." };
+  }
+
+  // profiles 에 있는 계정만 건드린다. auth.users 를 직접 겨냥하지 못하게 한다.
+  const [profile] = await db
+    .select({ id: profiles.id })
+    .from(profiles)
+    .where(eq(profiles.id, teacherId))
+    .limit(1);
+
+  if (!profile) {
+    return { ok: false, status: 404, message: "계정을 찾을 수 없습니다." };
+  }
+
+  const tempPassword = generateTempPassword();
+  const supabase = createSupabaseClient(url, key);
+  const updated = await supabase.auth.admin.updateUserById(teacherId, {
+    password: tempPassword,
+  });
+
+  if (updated.error || !updated.data.user) {
+    console.error("[invites] 비밀번호 재설정 실패:", updated.error?.message);
+    return { ok: false, status: 500, message: "비밀번호를 바꾸지 못했습니다." };
+  }
+
+  return {
+    ok: true,
+    loginId: toDisplayId(updated.data.user.email ?? ""),
+    tempPassword,
+  };
+}
+

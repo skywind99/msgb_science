@@ -19,7 +19,7 @@ export const NAV_ITEMS = [
 
 function AdminLoginModal({ onClose }: { onClose: () => void }) {
   const [pw, setPw] = useState("");
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [loading, setLoading] = useState(false);
   const { login, loginWithEmail, teacherLoginAvailable } = useAdmin();
   // 교사 로그인이 설정돼 있으면 그것을 기본으로 보여준다.
@@ -33,7 +33,7 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
     setLoading(true);
 
     if (mode === "teacher") {
-      const res = await loginWithEmail(email, pw);
+      const res = await loginWithEmail(loginId, pw);
       setLoading(false);
       if (res.ok) {
         toast({ title: "로그인되었습니다." });
@@ -73,7 +73,7 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
             </h2>
             <p className="text-xs text-muted-foreground">
               {mode === "teacher"
-                ? "발급받은 이메일과 비밀번호를 입력하세요"
+                ? "발급받은 아이디와 비밀번호를 입력하세요"
                 : "관리자 비밀번호를 입력하세요"}
             </p>
           </div>
@@ -81,11 +81,13 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
         <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "teacher" && (
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="이메일"
+              type="text"
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
+              placeholder="아이디"
               autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
               autoFocus
               className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary transition-all"
             />
@@ -109,7 +111,7 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
             </button>
             <button
               type="submit"
-              disabled={loading || !pw || (mode === "teacher" && !email)}
+              disabled={loading || !pw || (mode === "teacher" && !loginId)}
               className="flex-1 px-4 py-3 rounded-xl font-semibold bg-primary text-primary-foreground disabled:opacity-50 transition-colors"
             >
               {loading ? "확인 중..." : "로그인"}

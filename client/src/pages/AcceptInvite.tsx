@@ -3,6 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { Loader2, ShieldCheck, TriangleAlert, UserPlus } from "lucide-react";
 import { api } from "@shared/routes";
 import type { CheckInviteResponse } from "@shared/schema";
+import { checkTeacherId, MAX_ID_LENGTH } from "@shared/teacherId";
 import { useAdmin } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 
@@ -45,11 +46,14 @@ export default function AcceptInvite() {
   const [checking, setChecking] = useState(true);
 
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [passwordAgain, setPasswordAgain] = useState("");
   const [pending, setPending] = useState(false);
   const [done, setDone] = useState(false);
+
+  // 서버와 같은 함수로 검사한다. 규칙이 갈라지면 화면은 통과인데 서버가 400 을 준다.
+  const idProblem = loginId.length === 0 ? null : checkTeacherId(loginId.trim().toLowerCase());
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +82,8 @@ export default function AcceptInvite() {
   const mismatch = passwordAgain.length > 0 && password !== passwordAgain;
   const canSubmit =
     name.trim().length >= 2 &&
-    /\S+@\S+\.\S+/.test(email) &&
+    loginId.trim().length > 0 &&
+    !idProblem &&
     password.length >= 8 &&
     password === passwordAgain &&
     !pending;
@@ -91,7 +96,12 @@ export default function AcceptInvite() {
       const res = await fetch(api.invites.accept.path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, email: email.trim(), password, name: name.trim() }),
+        body: JSON.stringify({
+          token,
+          loginId: loginId.trim().toLowerCase(),
+          password,
+          name: name.trim(),
+        }),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.message ?? "계정을 만들지 못했습니다.");
@@ -100,7 +110,7 @@ export default function AcceptInvite() {
 
       // 만든 계정으로 바로 로그인시킨다. 방금 정한 비밀번호를 또 입력하게 할 이유가 없다.
       if (teacherLoginAvailable) {
-        const login = await loginWithEmail(email.trim(), password);
+        const login = await loginWithEmail(loginId.trim().toLowerCase(), password);
         if (login.ok) {
           toast({ title: "계정이 만들어졌습니다", description: `${name.trim()} 선생님으로 로그인했습니다.` });
           navigate("/");
@@ -175,18 +185,30 @@ export default function AcceptInvite() {
                 />
               </Field>
 
-              <Field label="이메일" hint="(로그인에 씁니다)">
+              <Field label="아이디" hint="(로그인에 씁니다)">
                 <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="email"
-                  placeholder="teacher@example.com"
-                  maxLength={200}
+                  type="text"
+                  value={loginId}
+                  // 입력 즉시 소문자로 낮춘다. 서버도 소문자로 바꿔 저장하므로,
+                  // 그냥 두면 화면에는 Kim 인데 실제 아이디는 kim 이 되어 어긋난다.
+                  onChange={(e) => setLoginId(e.target.value.toLowerCase())}
+                  autoComplete="username"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  placeholder="kim"
+                  maxLength={MAX_ID_LENGTH}
                   disabled={pending}
                   className={inputClass}
                 />
               </Field>
+              {idProblem ? (
+                <p className="text-xs font-semibold text-destructive">{idProblem}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  영문 소문자로 시작하고, 소문자·숫자·밑줄(_)만 쓸 수 있습니다.
+                  이메일은 받지 않습니다.
+                </p>
+              )}
 
               <Field label="비밀번호" hint="(8자 이상)">
                 <input

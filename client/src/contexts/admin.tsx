@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { supabase, isTeacherLoginAvailable } from "@/lib/supabase";
+import { toLoginEmail } from "@shared/teacherId";
 
 export type Role = "admin" | "teacher";
 
@@ -22,7 +23,8 @@ interface AdminContextType {
   /** 교사 이메일 로그인 사용 가능 여부 (VITE_SUPABASE_* 설정 시 true) */
   teacherLoginAvailable: boolean;
   login: (password: string) => Promise<boolean>;
-  loginWithEmail: (email: string, password: string) => Promise<{ ok: boolean; message?: string }>;
+  /** 교사 로그인. 첫 인자는 아이디다 (`@` 가 있으면 이메일로 취급). */
+  loginWithEmail: (loginId: string, password: string) => Promise<{ ok: boolean; message?: string }>;
   logout: () => void;
 }
 
@@ -103,16 +105,24 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     return false;
   };
 
+  /**
+   * 교사 로그인. 입력은 아이디이고 내부적으로 이메일로 바꿔 Supabase 에 넘긴다
+   * (`shared/teacherId.ts`). `@` 가 들어 있으면 실제 이메일로 보고 그대로 쓴다 —
+   * 아이디 방식으로 바꾸기 전에 만든 계정이 잠기지 않게 하는 예외다.
+   */
   const loginWithEmail = async (
-    email: string,
+    loginId: string,
     pwd: string
   ): Promise<{ ok: boolean; message?: string }> => {
     if (!supabase) {
       return { ok: false, message: "교사 로그인이 설정되지 않았습니다." };
     }
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password: pwd });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: toLoginEmail(loginId),
+      password: pwd,
+    });
     if (error || !data.session) {
-      return { ok: false, message: "이메일 또는 비밀번호가 올바르지 않습니다." };
+      return { ok: false, message: "아이디 또는 비밀번호가 올바르지 않습니다." };
     }
 
     // 서버에서 profiles 를 확인한다. 초대받지 않은 계정은 여기서 막힌다.
