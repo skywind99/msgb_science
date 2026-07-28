@@ -10,6 +10,57 @@
 
 ---
 
+## 2026-07-28 — 초대 모달이 네비 바에 갇혀 있던 문제
+
+### 증상
+초대 발급 창이 화면 상단에 붙어 제목과 닫기 버튼이 잘렸다.
+고치는 과정에서 본문이 접혀 헤더만 남았고, 그다음엔 아무것도 안 떴다.
+
+### 원인 1 — `backdrop-filter` 가 `fixed` 의 기준을 바꾼다
+`client/src/index.css` 의 `.glass-nav` 에 `backdrop-blur-md` 가 있다.
+`backdrop-filter` 가 걸린 요소는 자손 `position: fixed` 의 **컨테이닝 블록이 된다.**
+뷰포트 기준이 아니게 되는 것이다.
+
+`InviteManager` 를 그 `<header>` 안에 넣었으니 `fixed inset-0` 이 화면 전체가 아니라
+**높이 80px 짜리 네비 바**를 덮고 있었다. 그래서 상단에 붙고 잘렸다.
+
+`PopupManager` 가 이미 `createPortal(modal, document.body)` 를 쓰고 있었고
+주석에 "z-index 문제 없음" 이라고 적혀 있었다. 같은 함정을 이미 한 번 밟은 흔적인데
+그걸 보고도 이유를 파악하지 못했다. **헤더 안에 모달을 넣을 때는 포털이 필수다.**
+
+### 원인 2 — 포털을 `AnimatePresence` 안에 넣으면 렌더되지 않는다
+포털을 붙이고도 창이 아예 안 떴다. 이렇게 썼기 때문이다.
+
+```
+<AnimatePresence>{open && createPortal(...)}</AnimatePresence>   // 안 나온다
+{createPortal(<AnimatePresence>{open && (...)}</AnimatePresence>, document.body)}  // 정상
+```
+
+`AnimatePresence` 는 자식으로 받은 포털을 렌더하지 못한다. `PopupManager` 는
+포털을 밖에 두고 있는데 순서를 반대로 짰다.
+
+### 원인을 찾은 방법
+브라우저 콘솔을 볼 수 없어서 dev 서버 로그를 봤다. 버튼을 누른 시각마다
+`GET /api/invites 304` 가 찍혀 있었다. `enabled: open` 이 걸린 쿼리가 나갔다는 것은
+**`open` 이 true 로 바뀌었다는 뜻**이다. 클릭·상태는 정상이고 렌더만 안 되는 상황으로
+범위가 좁혀졌고, 그때 포털 위치를 의심했다.
+
+### 헛짚은 것
+CSS 높이 계산 문제로 보고 두 번 고쳤다. `max-h` 를 줄이고, 오버레이 전체를
+스크롤하게 바꾸고, 안쪽 `flex-1` 을 걷어냈다. 전부 관계없는 수정이라 되돌렸다.
+`ApplyDialog` 까지 같이 건드렸는데 그쪽은 네비 바 안이 아니라 애초에 문제가 없었다.
+
+**증상이 "위치가 이상하다" 인데 원인이 레이아웃 계산이 아닐 수 있다.**
+`fixed` 가 예상과 다르게 놓이면 CSS 값을 만지기 전에 조상에
+`transform` / `filter` / `backdrop-filter` / `perspective` / `contain` 이 있는지 볼 것.
+
+### 함께 개선한 것
+발급 직후 링크 복사가 작은 글자 링크로 경고문 사이에 끼어 있었다. 그 화면에서 할 일은
+복사 하나뿐이라 전체 너비 버튼으로 키우고, 복사하면 초록색으로 바뀌게 했다.
+발급 직후에는 입력폼과 목록을 감춰 한 번뿐인 링크만 보이게 했다.
+
+---
+
 ## 2026-07-27 — 1단계 마무리: 교사 초대 흐름
 
 ### 한 일

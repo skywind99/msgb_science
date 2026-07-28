@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Loader2, Trash2, UserPlus, X } from "lucide-react";
@@ -47,25 +48,35 @@ function FreshLink({ link }: { link: string }) {
   };
 
   return (
-    <div className="rounded-xl border-2 border-primary/30 bg-primary/[0.04] p-4 space-y-2">
-      <div className="text-xs font-bold text-primary">초대 링크가 만들어졌습니다</div>
-      <p className="text-xs font-mono break-all text-foreground bg-background rounded-lg border border-border p-2">
+    <div className="rounded-xl border-2 border-primary/30 bg-primary/[0.04] p-5 space-y-4">
+      <div className="text-sm font-bold text-primary">초대 링크가 만들어졌습니다</div>
+
+      <p className="text-xs font-mono break-all text-foreground bg-background rounded-lg border border-border p-3 leading-relaxed">
         {full}
       </p>
+
+      {/* 이 화면에서 할 일은 복사 하나뿐이다. 작은 글자 링크로 두면 놓친다. */}
       <button
         type="button"
         onClick={copy}
-        className="inline-flex items-center gap-1.5 text-xs font-semibold text-primary hover:underline"
+        className={`w-full py-3 rounded-xl text-sm font-bold transition-colors inline-flex items-center justify-center gap-2 ${
+          copied
+            ? "bg-emerald-600 text-white"
+            : "bg-primary text-primary-foreground hover:opacity-90"
+        }`}
       >
-        {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-        {copied ? "복사했습니다" : "링크 복사"}
+        {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+        {copied ? "복사했습니다" : "링크 복사하기"}
       </button>
-      <p className="text-xs text-destructive font-semibold">
-        이 링크는 지금만 볼 수 있습니다. 창을 닫으면 다시 확인할 수 없습니다.
-      </p>
-      <p className="text-xs text-muted-foreground">
-        해당 선생님에게만 전달하세요. 링크를 받은 사람은 계정을 하나 만들 수 있습니다.
-      </p>
+
+      <div className="space-y-1.5 pt-1 border-t border-primary/15">
+        <p className="text-xs text-destructive font-semibold pt-2">
+          이 링크는 지금만 볼 수 있습니다. 창을 닫으면 다시 확인할 수 없습니다.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          해당 선생님에게만 전달하세요. 링크를 받은 사람은 계정을 하나 만들 수 있습니다.
+        </p>
+      </div>
     </div>
   );
 }
@@ -156,9 +167,26 @@ export function InviteManager() {
         <UserPlus className="w-4 h-4" />
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6">
+      {/*
+        **반드시 포털로 띄운다.**
+
+        이 컴포넌트는 `glass-nav` 헤더 안에서 렌더된다. 그 클래스에 `backdrop-blur-md`
+        가 걸려 있는데, `backdrop-filter` 는 자손 `position: fixed` 의 기준을
+        뷰포트에서 그 요소로 바꿔 버린다. 포털 없이 두면 `fixed inset-0` 이 화면
+        전체가 아니라 높이 80px 짜리 네비 바만 덮어서, 모달이 상단에 붙고 잘린다.
+
+        `PopupManager` 가 같은 이유로 이미 포털을 쓴다. 헤더 안에 모달을 새로
+        추가할 때는 이걸 먼저 확인할 것.
+
+        **포털이 `AnimatePresence` 밖에 있어야 한다.** 반대로 감싸면
+        (`<AnimatePresence>{open && createPortal(...)}</AnimatePresence>`)
+        상태는 바뀌는데 화면에 아무것도 안 나온다. AnimatePresence 는 자식으로
+        받은 포털을 렌더하지 못한다. 실제로 그렇게 만들어 놓고 한참 헤맸다.
+      */}
+      {createPortal(
+        <AnimatePresence>
+          {open && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-6">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -170,7 +198,7 @@ export function InviteManager() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="relative w-full max-w-lg bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]"
             >
               <div className="flex items-start justify-between gap-3 p-5 border-b bg-muted/30 shrink-0">
                 <div>
@@ -189,8 +217,10 @@ export function InviteManager() {
               </div>
 
               <div className="p-5 overflow-y-auto flex-1 space-y-5">
+                {/* 발급 직후에는 링크만 보여준다. 아래에 입력폼과 목록이 같이 깔리면
+                    한 번뿐인 링크가 화면 위에 눌려 붙어 눈에 안 들어온다. */}
                 {fresh ? (
-                  <>
+                  <div className="py-2 space-y-4">
                     <FreshLink link={fresh.link} />
                     <button
                       type="button"
@@ -199,7 +229,7 @@ export function InviteManager() {
                     >
                       확인했습니다
                     </button>
-                  </>
+                  </div>
                 ) : (
                   <div className="space-y-3">
                     <div className="space-y-1.5">
@@ -255,7 +285,7 @@ export function InviteManager() {
                   </div>
                 )}
 
-                <div className="pt-4 border-t border-border space-y-2">
+                <div className={`pt-4 border-t border-border space-y-2 ${fresh ? "hidden" : ""}`}>
                   <h3 className="text-xs font-bold text-foreground">발급한 초대</h3>
                   {isLoading && (
                     <p className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -308,8 +338,10 @@ export function InviteManager() {
               </div>
             </motion.div>
           </div>
-        )}
-      </AnimatePresence>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
     </>
   );
 }
