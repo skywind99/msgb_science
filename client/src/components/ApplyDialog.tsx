@@ -228,8 +228,26 @@ function StatusLine({ app }: { app: MyApplication }) {
  * `.ics` 는 fetch + Blob 이 아니라 평범한 링크로 둔다. 그래야 iOS 사파리가
  * `text/calendar` 응답을 캘린더 앱에 넘긴다.
  */
-const isAndroid = () =>
-  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+/**
+ * 안드로이드로 볼 것인가. **순서를 정하는 데만 쓴다.** 이 값이 틀려도
+ * 세 경로가 모두 화면에 있으므로 학생이 라벨을 보고 고르면 된다.
+ *
+ * `userAgent` 만으로는 태블릿을 놓친다. 안드로이드 태블릿 크롬은 화면이 크면
+ * "데스크톱 사이트"로 열리는데, 그러면 `Android` 대신 `X11; Linux x86_64` 같은
+ * 값을 쓴다. 실제로 폰 두 종류는 되는데 태블릿만 안 됐다.
+ *
+ * 그래서 터치 지원 여부를 함께 본다. 아이패드도 데스크톱 모드에서 `Macintosh` 로
+ * 위장하지만 그쪽은 `.ics` 가 맞는 경로이므로 Mac·Windows·iOS·ChromeOS 는 제외한다.
+ * 터치스크린 리눅스 데스크톱이 걸릴 수 있는데, 그래도 `.ics` 가 한 번 더 눌러야
+ * 하는 자리에 남아 있으므로 막다른 길이 되지 않는다.
+ */
+const isAndroid = () => {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/Android/i.test(ua)) return true;
+  const touch = (navigator.maxTouchPoints ?? 0) > 0;
+  return touch && !/Windows|Macintosh|iPhone|iPad|iPod|CrOS/i.test(ua);
+};
 
 export function AddToCalendarLink({ post }: { post: PublicPost }) {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
