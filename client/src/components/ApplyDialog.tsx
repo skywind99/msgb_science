@@ -209,18 +209,54 @@ function StatusLine({ app }: { app: MyApplication }) {
  * (`server/calendar.ts`). 그래서 학생이 이걸 한 번 눌러야 의미가 있고,
  * 신청 직후가 가장 누를 확률이 높은 자리다.
  *
- * fetch 로 받아 Blob 으로 만들지 않고 평범한 링크로 둔다. 그래야 iOS 사파리가
- * text/calendar 응답을 캘린더 앱에 넘긴다.
+ * **기기에 따라 되는 방식이 다르다.**
+ * - 아이폰   : `.ics` 를 캘린더 앱이 받아 준다. 하루 전 알림도 그대로 들어간다.
+ * - 안드로이드: 크롬이 `.ics` 를 다운로드해 버린다. 구글 캘린더 링크를 써야 한다.
+ *              대신 알림은 구글 기본 설정이 적용된다 (하루 전 알림이 사라진다).
+ *
+ * 그래서 기기에 맞는 쪽을 먼저 보여주고 다른 쪽도 남겨 둔다.
+ * 판별이 틀려도 학생이 다른 링크를 쓸 수 있어야 한다.
+ *
+ * `.ics` 는 fetch + Blob 이 아니라 평범한 링크로 둔다. 그래야 iOS 사파리가
+ * `text/calendar` 응답을 캘린더 앱에 넘긴다.
  */
+const isAndroid = () =>
+  typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
+
 export function AddToCalendarLink({ postId }: { postId: number }) {
+  const icsHref = buildUrl(api.calendar.activity.path, { id: postId });
+  const googleHref = buildUrl(api.calendar.google.path, { id: postId });
+  const android = isAndroid();
+
+  const primary = android
+    ? { href: googleHref, label: "구글 캘린더에 추가" }
+    : { href: icsHref, label: "내 캘린더에 추가" };
+  const secondary = android
+    ? { href: icsHref, label: "캘린더 파일(.ics)로 받기" }
+    : { href: googleHref, label: "구글 캘린더에 추가" };
+
   return (
-    <a
-      href={buildUrl(api.calendar.activity.path, { id: postId })}
-      className="w-full py-2.5 rounded-xl border-2 border-border text-sm font-bold hover:bg-muted/50 transition-colors inline-flex items-center justify-center gap-2"
-    >
-      <CalendarPlus className="w-4 h-4" />
-      내 캘린더에 추가
-    </a>
+    <div className="space-y-1.5">
+      <a
+        href={primary.href}
+        className="w-full py-2.5 rounded-xl border-2 border-border text-sm font-bold hover:bg-muted/50 transition-colors inline-flex items-center justify-center gap-2"
+      >
+        <CalendarPlus className="w-4 h-4" />
+        {primary.label}
+      </a>
+      <a
+        href={secondary.href}
+        className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {secondary.label}
+      </a>
+      {android && (
+        <p className="text-xs text-muted-foreground text-center">
+          구글 캘린더는 알림이 기본 설정으로 들어갑니다. 하루 전에 알림을 받으려면
+          저장한 뒤 알림을 "1일 전"으로 바꿔 주세요.
+        </p>
+      )}
+    </div>
   );
 }
 

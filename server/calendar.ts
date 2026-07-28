@@ -176,6 +176,29 @@ export function buildCalendar(events: CalendarEvent[], now = new Date()): string
 }
 
 /**
+ * 구글 캘린더 일정 추가 주소.
+ *
+ * 왜 필요한가: **안드로이드 크롬은 `.ics` 를 캘린더로 넘기지 않고 다운로드한다.**
+ * `text/calendar` 를 렌더할 수 없어서 무조건 파일로 내려받고, 학생이 파일을 찾아
+ * 앱을 골라야 한다. `Content-Disposition` 을 바꿔도 달라지지 않는다.
+ * 반면 이 주소는 웹 링크라 캘린더 앱이 바로 열리며 일정이 미리 채워진다.
+ *
+ * **대가: 알림 시각을 지정할 수 없다.** 구글의 TEMPLATE 주소에는 알림 항목이 없어서
+ * 사용자의 기본 알림(보통 30분 전)이 적용된다. `.ics` 의 하루 전 알림은 사라진다.
+ * 그래서 둘 중 하나를 없애지 말고 기기에 맞춰 함께 제공한다.
+ */
+export function eventToGoogleUrl(e: CalendarEvent): string {
+  const params = new URLSearchParams({
+    action: "TEMPLATE",
+    text: e.summary,
+    dates: `${toIcsUtc(e.start)}/${toIcsUtc(e.end)}`,
+  });
+  if (e.description) params.set("details", e.description);
+  if (e.location) params.set("location", e.location);
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+/**
  * 내려받기 파일명.
  *
  * 한글 파일명은 `filename=` 에 그대로 넣을 수 없다(헤더는 latin1 만 담는다).

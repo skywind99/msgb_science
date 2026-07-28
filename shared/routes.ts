@@ -134,8 +134,12 @@ export const api = {
     },
   },
 
-  // 활동 하나를 폰 캘린더에 담는 .ics 파일. 공개 경로다 (활동 정보만 들어간다).
-  // 알림은 담긴 뒤 폰이 스스로 띄운다. 서버는 텍스트만 내려준다.
+  // 활동 하나를 폰 캘린더에 담는 경로. 공개다 (활동 정보만 들어간다).
+  // 알림은 담긴 뒤 폰이 스스로 띄운다. 서버는 파일이나 링크만 내려준다.
+  //
+  // 기기에 따라 되는 방식이 다르다.
+  // - 아이폰   : `.ics` 를 캘린더 앱이 받아 준다. 하루 전 알림도 그대로 들어간다.
+  // - 안드로이드: 크롬이 `.ics` 를 다운로드해 버린다. 구글 캘린더 링크를 써야 한다.
   calendar: {
     activity: {
       method: "GET" as const,
@@ -143,6 +147,16 @@ export const api = {
       responses: {
         // text/calendar 본문
         200: z.string(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
+    },
+    google: {
+      method: "GET" as const,
+      path: "/api/posts/:id/calendar/google" as const,
+      responses: {
+        // calendar.google.com 으로 302
+        302: z.void(),
         400: errorSchemas.validation,
         404: errorSchemas.notFound,
       },

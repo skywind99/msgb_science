@@ -11,7 +11,12 @@ import {
   type Post,
 } from "../shared/schema.js";
 import { activityStage, STAGE_REJECT_MESSAGE } from "../shared/activity.js";
-import { buildCalendar, contentDisposition, postToEvent } from "./calendar.js";
+import {
+  buildCalendar,
+  contentDisposition,
+  eventToGoogleUrl,
+  postToEvent,
+} from "./calendar.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
@@ -593,30 +598,57 @@ export async function registerRoutes(
     }
   });
 
-  // ── 캘린더 (.ics) ────────────────────────────────────────
-  // 활동 하나를 폰 캘린더에 담는 파일. 담긴 뒤로는 폰이 스스로 알림을 띄우고
+  // ── 캘린더 ───────────────────────────────────────────────
+  // 활동 하나를 폰 캘린더에 담는다. 담긴 뒤로는 폰이 스스로 알림을 띄우고
   // 서버는 관여하지 않는다. 활동 정보만 들어가므로 공개 경로다.
-  app.get(api.calendar.activity.path, async (req, res) => {
+  //
+  // 두 경로가 필요한 이유는 `shared/routes.ts` 의 주석 참고 — 안드로이드 크롬은
+  // .ics 를 다운로드해 버려서 구글 캘린더 링크가 있어야 한다.
+
+  /** 요청에서 이벤트를 만든다. 못 만들면 응답까지 보내고 null 을 반환한다. */
+  const eventFromRequest = async (req: Request, res: Response) => {
     const id = parseInt(String(req.params.id));
-    if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
-
+    if (isNaN(id)) {
+      res.status(404).json({ message: "Invalid ID" });
+      return null;
+    }
     const post = await storage.getPost(id);
-    if (!post) return res.status(404).json({ message: "게시물을 찾을 수 없습니다." });
-
+    if (!post) {
+      res.status(404).json({ message: "게시물을 찾을 수 없습니다." });
+      return null;
+    }
     // 프록시 뒤에 있으므로 원래 스킴은 헤더에서 본다. 설명에 넣을 링크에 쓴다.
     const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? req.protocol;
     const origin = `${proto.split(",")[0]}://${req.get("host")}`;
 
     const event = postToEvent(post, origin);
     if (!event) {
-      return res.status(400).json({ message: "활동 일시가 없어 캘린더에 담을 수 없습니다." });
+      res.status(400).json({ message: "활동 일시가 없어 캘린더에 담을 수 없습니다." });
+      return null;
     }
+    return { post, event };
+  };
+
+  app.get(api.calendar.activity.path, async (req, res) => {
+    const found = await eventFromRequest(req, res);
+    if (!found) return;
 
     res.setHeader("Content-Type", "text/calendar; charset=utf-8");
-    res.setHeader("Content-Disposition", contentDisposition(post.title, `activity-${post.id}`));
+    res.setHeader(
+      "Content-Disposition",
+      contentDisposition(found.post.title, `activity-${found.post.id}`)
+    );
     // 활동 정보가 바뀔 수 있으니 오래 캐시하지 않는다.
     res.setHeader("Cache-Control", "public, max-age=300");
-    res.send(buildCalendar([event]));
+    res.send(buildCalendar([found.event]));
+  });
+
+  // 구글 캘린더로 넘긴다. 주소를 클라이언트에서 만들지 않고 여기서 302 하는 이유는
+  // 설명 문구(마감·정원·링크)를 한 곳에서만 관리하기 위해서다.
+  app.get(api.calendar.google.path, async (req, res) => {
+    const found = await eventFromRequest(req, res);
+    if (!found) return;
+    res.redirect(302, eventToGoogleUrl(found.event));
   });
 
   // ── 교사 초대 ────────────────────────────────────────────
