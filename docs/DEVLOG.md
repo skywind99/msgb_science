@@ -18,7 +18,7 @@
 
 ### 수정
 - `.github/workflows/supabase-keep-alive.yml`
-  - Authorization 헤더를 ****** 변수 참조 형태로 복구
+  - Authorization 헤더를 `Bearer $SB_KEY` 변수 참조 형태로 복구
   - `SB_URL="${SB_URL%/}"`로 끝 슬래시 정규화
   - `curl`에 `--retry 3 --retry-delay 2 --retry-all-errors` 추가
 
