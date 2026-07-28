@@ -174,11 +174,13 @@
 
 - [x] **Supabase 리전 확인 완료** (2026-07-28) — `aws-1-ap-northeast-2` = **서울**.
       DATABASE_URL 호스트명으로 확인했다. 데이터 저장은 국내다.
-- [ ] **Vercel 함수 리전을 서울로 바꾸기** — `vercel.json` 에 `regions` 를 넣었지만
-      **Hobby 플랜에서는 무시된다.** 대시보드에서 해야 한다:
-      Settings → Functions → Function Region → Seoul (icn1) → 재배포.
-      지금은 저장은 서울인데 처리가 미국(`iad1`)을 거친다. `x-vercel-id` 의 두 번째
-      값으로 확인할 수 있다. **이걸 해야 개인정보처리방침에 국외 이전 없음이라고 쓴다.**
+- [ ] **Vercel 함수 리전을 서울로 바꾸기** — **`vercel.json` 에 `regions` 를 넣지 말 것.**
+      Hobby 플랜은 이 항목을 무시하는 게 아니라 **빌드를 거부한다.** 실제로 넣었다가
+      배포가 조용히 멈췄다 (사이트는 옛 배포본이 계속 서비스돼서 눈치채기 어렵다).
+      대시보드에서 해야 한다: Settings → Functions → Function Region → Seoul (icn1) → 재배포.
+      지금은 저장은 서울인데 처리가 미국(`iad1`)을 거친다.
+      `x-vercel-id` 의 **두 번째** 값이 실행 리전이다 (첫 번째는 접속 엣지).
+      **이걸 해야 개인정보처리방침에 국외 이전 없음이라고 쓴다.**
 - [x] 개인정보처리방침 페이지 작성 (2026-07-28) — `/privacy`, `client/src/pages/Privacy.tsx`.
       푸터와 신청 폼 고지에서 연결된다.
 - [ ] **방침의 개인정보 보호책임자·연락처 채우기** — `Privacy.tsx` 의 `CONTACT`.

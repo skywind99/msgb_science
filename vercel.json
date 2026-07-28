@@ -1,8 +1,6 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist/public",
-  "//regions": "주의: 이 항목은 Hobby 플랜에서 무시된다. 실제로 적용하려면 Vercel 대시보드 → Settings → Functions → Function Region 을 Seoul(icn1) 로 바꾸고 재배포해야 한다. 여기 남겨 둔 것은 Pro 로 올라갈 때를 위한 것과, 서울이어야 하는 이유를 기록해 두기 위해서다. DB 는 서울(ap-northeast-2)인데 함수가 미국에서 돌면 학생 이름·학년·반이 담긴 요청이 국외를 거치게 되고, 개인정보처리방침에 국외 이전 없음이라고 쓸 수 없다.",
-  "regions": ["icn1"],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/index.html" }
