@@ -210,43 +210,56 @@ function StatusLine({ app }: { app: MyApplication }) {
  * (`server/calendar.ts`). 그래서 학생이 이걸 한 번 눌러야 의미가 있고,
  * 신청 직후가 가장 누를 확률이 높은 자리다.
  *
- * **기기에 따라 되는 방식이 다르다.** 셋 다 유지해야 한다.
- * - 아이폰   : `.ics` 를 캘린더 앱이 받아 준다. 하루 전 알림도 그대로 들어간다.
- * - 안드로이드: 크롬이 `.ics` 를 다운로드해 버리고, 구글 캘린더 웹 주소는 앱이 아니라
- *              브라우저에서 열린다. `intent://` 로 시스템의 "일정 추가" 를 직접 불러야
- *              구글·삼성 등 **기본 캘린더 앱**이 열린다.
- * - 그 외    : `.ics`.
+ * **기기마다 되는 방법이 다르다.** 기기 확인으로 알아낸 결과다.
+ * - 안드로이드 (폰·태블릿) : `intent://` 로 시스템의 "일정 추가"를 불러야
+ *   기본 캘린더 앱이 열린다. `.ics` 는 크롬이 다운로드해 버리고,
+ *   구글 캘린더 웹 주소는 앱이 아니라 브라우저에서 열린다.
+ * - 아이폰·아이패드 : **사파리**가 `.ics` 를 캘린더 앱에 넘긴다.
+ *   iOS 크롬은 자체 다운로드 관리자를 써서 파일로 받는다 — 그때는 구글이 대비책.
+ * - PC : `.ics` 를 받아서 열어야 하니 3단계이고 연결된 앱이 없으면 막힌다.
+ *   구글이 클릭 → 저장 2단계라 이쪽이 기본이다.
  *
  * 안드로이드는 알림 시각을 지정할 수 없다 (인텐트에도 구글 TEMPLATE 주소에도 해당
  * 항목이 없다). 캘린더 앱 기본값이 붙으므로 화면에 안내를 띄운다.
  *
- * **판별에 기대지 않는다.** `userAgent` 는 믿을 게 못 된다 — 안드로이드 태블릿이
- * "데스크톱 사이트"로 열리면 자기를 안드로이드라고 말하지 않아서, 인텐트 대신
- * `.ics` 가 기본이 되고 파일만 다운로드된다. 실제로 그렇게 걸렸다.
- * 그래서 **세 경로를 항상 보여주고 라벨에 기기를 적는다.** 판별은 순서만 정한다.
+ * **구글 캘린더는 모든 기기에 공통으로 남긴다.** 기기 판별은 틀릴 수 있는데
+ * (안드로이드 태블릿이 "데스크톱 사이트"로 열리면 자기를 안드로이드라고 하지 않는다)
+ * 어디서든 되는 선택지가 하나 있으면 막다른 길이 되지 않는다.
+ * 반대로 그 기기에서 아무 일도 안 일어나는 링크는 띄우지 않는다 — 예전에 셋을 다
+ * 띄웠더니 PC 에 안드로이드 인텐트가 보여 오히려 혼란스러웠다.
  *
- * `.ics` 는 fetch + Blob 이 아니라 평범한 링크로 둔다. 그래야 iOS 사파리가
+ * `.ics` 는 fetch + Blob 이 아니라 평범한 링크로 둔다. 그래야 사파리가
  * `text/calendar` 응답을 캘린더 앱에 넘긴다.
+ * (`Content-Disposition` 을 `inline` 으로 바꿔도 iOS 크롬은 그대로 다운로드한다.
+ * 시도 후 되돌렸다 — `server/calendar.ts` 참고.)
  */
 /**
- * 안드로이드로 볼 것인가. **순서를 정하는 데만 쓴다.** 이 값이 틀려도
- * 세 경로가 모두 화면에 있으므로 학생이 라벨을 보고 고르면 된다.
+ * 안드로이드 계열인가.
  *
  * `userAgent` 만으로는 태블릿을 놓친다. 안드로이드 태블릿 크롬은 화면이 크면
  * "데스크톱 사이트"로 열리는데, 그러면 `Android` 대신 `X11; Linux x86_64` 같은
  * 값을 쓴다. 실제로 폰 두 종류는 되는데 태블릿만 안 됐다.
- *
- * 그래서 터치 지원 여부를 함께 본다. 아이패드도 데스크톱 모드에서 `Macintosh` 로
- * 위장하지만 그쪽은 `.ics` 가 맞는 경로이므로 Mac·Windows·iOS·ChromeOS 는 제외한다.
- * 터치스크린 리눅스 데스크톱이 걸릴 수 있는데, 그래도 `.ics` 가 한 번 더 눌러야
- * 하는 자리에 남아 있으므로 막다른 길이 되지 않는다.
+ * 그래서 터치 지원 여부를 함께 본다.
  */
 const isAndroid = () => {
   if (typeof navigator === "undefined") return false;
   const ua = navigator.userAgent;
   if (/Android/i.test(ua)) return true;
   const touch = (navigator.maxTouchPoints ?? 0) > 0;
-  return touch && !/Windows|Macintosh|iPhone|iPad|iPod|CrOS/i.test(ua);
+  return touch && !/Windows|Macintosh|iPhone|iPod|iPad|CrOS/i.test(ua);
+};
+
+/**
+ * 아이폰·아이패드인가. 맥 데스크톱은 여기 들어오지 않는다.
+ *
+ * 아이패드는 데스크톱 모드에서 `Macintosh` 로 위장한다. 진짜 맥은 터치가 없으므로
+ * 터치 여부로 가른다.
+ */
+const isIos = () => {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  if (/iPhone|iPad|iPod/i.test(ua)) return true;
+  return /Macintosh/i.test(ua) && (navigator.maxTouchPoints ?? 0) > 0;
 };
 
 export function AddToCalendarLink({ post }: { post: PublicPost }) {
@@ -259,45 +272,62 @@ export function AddToCalendarLink({ post }: { post: PublicPost }) {
   // 앱을 못 열면 browser_fallback_url 이 구글 캘린더 웹으로 보낸다.
   const intentHref = androidIntentUrl(event, `${origin}${googleHref}`);
 
-  const android = isAndroid();
+  const platform = isAndroid() ? "android" : isIos() ? "ios" : "desktop";
 
-  // 라벨에 기기를 적어 둔다. 판별이 빗나가도 학생이 맞는 것을 고를 수 있다.
-  const options = [
-    { key: "intent", href: intentHref, label: "캘린더 앱에 추가", hint: "안드로이드" },
-    { key: "ics", href: icsHref, label: "내 캘린더에 추가", hint: "아이폰 · PC" },
-    { key: "google", href: googleHref, label: "구글 캘린더에 추가", hint: "웹" },
-  ];
-  const primaryKey = android ? "intent" : "ics";
-  const primary = options.find((o) => o.key === primaryKey)!;
-  const rest = options.filter((o) => o.key !== primaryKey);
+  /**
+   * 기기마다 **그 기기에서 실제로 동작하는 두 가지**만 보여준다.
+   *
+   * 예전에는 세 개를 다 띄웠는데, 안드로이드 인텐트는 PC·아이폰에서 아무 일도
+   * 일어나지 않는 링크라 오히려 혼란스러웠다. 반대로 아무것도 안 감추면
+   * 판별이 빗나갔을 때 막다른 길이 된다.
+   *
+   * **구글 캘린더를 모든 기기에 공통으로 남기는 것으로 둘 다 해결한다.**
+   * 판별이 틀려도 구글은 어디서든 되므로 막다른 길이 없다.
+   */
+  const layout = {
+    // 인텐트가 시스템의 "일정 추가"를 불러 기본 캘린더 앱이 열린다.
+    android: { primary: "intent", secondary: "google" },
+    // 사파리가 .ics 를 캘린더 앱에 넘긴다. iOS 크롬은 다운로드되므로 구글이 대비책.
+    ios: { primary: "ics", secondary: "google" },
+    // PC 는 .ics 를 받아서 열어야 해 3단계고 연결된 앱이 없으면 막힌다.
+    // 구글은 클릭 → 저장 2단계라 이쪽이 기본이다. .ics 는 맥·Outlook 쓰는 사람용.
+    desktop: { primary: "google", secondary: "ics" },
+  }[platform];
+
+  const hrefOf = (key: string) =>
+    key === "intent" ? intentHref : key === "ics" ? icsHref : googleHref;
+  const labelOf = (key: string) =>
+    key === "intent"
+      ? "캘린더 앱에 추가"
+      : key === "ics"
+        ? platform === "desktop"
+          ? "캘린더 파일 받기 (.ics)"
+          : "내 캘린더에 추가"
+        : "구글 캘린더에 추가";
 
   return (
     <div className="space-y-1.5">
       <a
-        href={primary.href}
+        href={hrefOf(layout.primary)}
         className="w-full py-2.5 rounded-xl border-2 border-border text-sm font-bold hover:bg-muted/50 transition-colors inline-flex items-center justify-center gap-2"
       >
         <CalendarPlus className="w-4 h-4" />
-        {primary.label}
-        <span className="font-normal text-muted-foreground">({primary.hint})</span>
+        {labelOf(layout.primary)}
       </a>
 
-      <div className="flex items-center justify-center gap-3">
-        {rest.map((o) => (
-          <a
-            key={o.key}
-            href={o.href}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {o.label} <span className="opacity-70">({o.hint})</span>
-          </a>
-        ))}
-      </div>
+      <a
+        href={hrefOf(layout.secondary)}
+        className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        {labelOf(layout.secondary)}
+      </a>
 
-      <p className="text-xs text-muted-foreground text-center">
-        안드로이드는 알림이 캘린더 앱 기본 설정으로 들어갑니다. 하루 전에 받고 싶으면
-        저장한 뒤 알림을 "1일 전"으로 바꿔 주세요.
-      </p>
+      {platform === "android" && (
+        <p className="text-xs text-muted-foreground text-center">
+          알림이 캘린더 앱 기본 설정으로 들어갑니다. 하루 전에 받고 싶으면 저장한 뒤
+          알림을 "1일 전"으로 바꿔 주세요.
+        </p>
+      )}
     </div>
   );
 }
