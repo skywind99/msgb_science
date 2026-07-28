@@ -220,7 +220,10 @@ function StatusLine({ app }: { app: MyApplication }) {
  * 안드로이드는 알림 시각을 지정할 수 없다 (인텐트에도 구글 TEMPLATE 주소에도 해당
  * 항목이 없다). 캘린더 앱 기본값이 붙으므로 화면에 안내를 띄운다.
  *
- * 기기 판별이 틀려도 학생이 다른 경로를 쓸 수 있도록 보조 링크를 항상 남긴다.
+ * **판별에 기대지 않는다.** `userAgent` 는 믿을 게 못 된다 — 안드로이드 태블릿이
+ * "데스크톱 사이트"로 열리면 자기를 안드로이드라고 말하지 않아서, 인텐트 대신
+ * `.ics` 가 기본이 되고 파일만 다운로드된다. 실제로 그렇게 걸렸다.
+ * 그래서 **세 경로를 항상 보여주고 라벨에 기기를 적는다.** 판별은 순서만 정한다.
  *
  * `.ics` 는 fetch + Blob 이 아니라 평범한 링크로 둔다. 그래야 iOS 사파리가
  * `text/calendar` 응답을 캘린더 앱에 넘긴다.
@@ -229,23 +232,26 @@ const isAndroid = () =>
   typeof navigator !== "undefined" && /Android/i.test(navigator.userAgent);
 
 export function AddToCalendarLink({ post }: { post: PublicPost }) {
-  const icsHref = buildUrl(api.calendar.activity.path, { id: post.id });
-  const googleHref = buildUrl(api.calendar.google.path, { id: post.id });
-  const android = isAndroid();
-
-  // 안드로이드에서는 인텐트로 캘린더 앱을 직접 연다. 앱을 못 열면
-  // browser_fallback_url 이 구글 캘린더 웹으로 보낸다.
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const event = toCalendarEvent(post, origin);
-  const intentHref =
-    android && event ? androidIntentUrl(event, `${origin}${googleHref}`) : null;
+  if (!event) return null;
 
-  const primary = intentHref
-    ? { href: intentHref, label: "캘린더 앱에 추가" }
-    : { href: icsHref, label: "내 캘린더에 추가" };
-  const secondary = android
-    ? { href: googleHref, label: "구글 캘린더 웹으로 추가" }
-    : { href: googleHref, label: "구글 캘린더에 추가" };
+  const icsHref = buildUrl(api.calendar.activity.path, { id: post.id });
+  const googleHref = buildUrl(api.calendar.google.path, { id: post.id });
+  // 앱을 못 열면 browser_fallback_url 이 구글 캘린더 웹으로 보낸다.
+  const intentHref = androidIntentUrl(event, `${origin}${googleHref}`);
+
+  const android = isAndroid();
+
+  // 라벨에 기기를 적어 둔다. 판별이 빗나가도 학생이 맞는 것을 고를 수 있다.
+  const options = [
+    { key: "intent", href: intentHref, label: "캘린더 앱에 추가", hint: "안드로이드" },
+    { key: "ics", href: icsHref, label: "내 캘린더에 추가", hint: "아이폰 · PC" },
+    { key: "google", href: googleHref, label: "구글 캘린더에 추가", hint: "웹" },
+  ];
+  const primaryKey = android ? "intent" : "ics";
+  const primary = options.find((o) => o.key === primaryKey)!;
+  const rest = options.filter((o) => o.key !== primaryKey);
 
   return (
     <div className="space-y-1.5">
@@ -255,19 +261,25 @@ export function AddToCalendarLink({ post }: { post: PublicPost }) {
       >
         <CalendarPlus className="w-4 h-4" />
         {primary.label}
+        <span className="font-normal text-muted-foreground">({primary.hint})</span>
       </a>
-      <a
-        href={secondary.href}
-        className="block text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
-      >
-        {secondary.label}
-      </a>
-      {android && (
-        <p className="text-xs text-muted-foreground text-center">
-          안드로이드는 알림이 캘린더 앱 기본 설정으로 들어갑니다. 하루 전에 받고 싶으면
-          저장한 뒤 알림을 "1일 전"으로 바꿔 주세요.
-        </p>
-      )}
+
+      <div className="flex items-center justify-center gap-3">
+        {rest.map((o) => (
+          <a
+            key={o.key}
+            href={o.href}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {o.label} <span className="opacity-70">({o.hint})</span>
+          </a>
+        ))}
+      </div>
+
+      <p className="text-xs text-muted-foreground text-center">
+        안드로이드는 알림이 캘린더 앱 기본 설정으로 들어갑니다. 하루 전에 받고 싶으면
+        저장한 뒤 알림을 "1일 전"으로 바꿔 주세요.
+      </p>
     </div>
   );
 }
