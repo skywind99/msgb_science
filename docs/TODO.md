@@ -172,17 +172,25 @@
 
 ## 개인정보 · 운영
 
-- [ ] **Supabase 리전 확인** — 서울(ap-northeast-2)이 아니면 데이터 쌓이기 전에 이전
-- [ ] **Vercel 함수 리전을 `icn1`로 고정** — `vercel.json` 에 `"regions": ["icn1"]`
-- [ ] 개인정보처리방침 페이지 작성 — 수집 항목, 보유기간, 파기 방법
+- [x] **Supabase 리전 확인 완료** (2026-07-28) — `aws-1-ap-northeast-2` = **서울**.
+      DATABASE_URL 호스트명으로 확인했다. 데이터 저장은 국내다.
+- [ ] **Vercel 함수 리전을 서울로 바꾸기** — `vercel.json` 에 `regions` 를 넣었지만
+      **Hobby 플랜에서는 무시된다.** 대시보드에서 해야 한다:
+      Settings → Functions → Function Region → Seoul (icn1) → 재배포.
+      지금은 저장은 서울인데 처리가 미국(`iad1`)을 거친다. `x-vercel-id` 의 두 번째
+      값으로 확인할 수 있다. **이걸 해야 개인정보처리방침에 국외 이전 없음이라고 쓴다.**
+- [x] 개인정보처리방침 페이지 작성 (2026-07-28) — `/privacy`, `client/src/pages/Privacy.tsx`.
+      푸터와 신청 폼 고지에서 연결된다.
+- [ ] **방침의 개인정보 보호책임자·연락처 채우기** — `Privacy.tsx` 의 `CONTACT`.
+      채우지 않으면 페이지 상단에 경고 상자가 뜬다.
+- [ ] 국외 이전 문구 갱신 — Vercel 리전을 서울로 바꾼 뒤 5번 항목을 "국외 이전 없음"으로.
 - [x] 신청 폼에 수집 항목·보유기간 고지 및 동의 체크 (`ApplyDialog.tsx`)
       **수집 항목을 늘리면 이 문구도 같이 고쳐야 한다.**
 - [x] **신청 기록 자동 삭제** (2026-07-28) — `script/cleanup.ts`,
       keep-alive 워크플로가 3일마다 실행한다.
       기준은 `coalesce(event_end, event_start)` 가 30일 지난 활동.
       `npx tsx script/cleanup.ts --dry-run` 으로 지울 대상만 확인할 수 있다.
-- [ ] **GitHub 시크릿에 `DATABASE_URL` 추가** — 없으면 삭제 단계를 건너뛴다.
-      이걸 넣지 않으면 폼에 고지한 30일 삭제가 실제로는 동작하지 않는다.
+- [x] **GitHub 시크릿 `DATABASE_URL` 등록 완료** (2026-07-28)
 - [ ] 학교 개인정보 보호책임자와 사전 협의
 - [ ] 교사용 운영 안내문 1장 (활동 등록부터 명단 확정까지)
 

@@ -10,6 +10,7 @@ import CategoryPage from "@/pages/CategoryPage";
 import PostDetail from "@/pages/PostDetail";
 import Schedule from "@/pages/Schedule";
 import AcceptInvite from "@/pages/AcceptInvite";
+import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 import { PopupDisplay } from "@/components/PopupDisplay";
 
@@ -39,6 +40,7 @@ function Router() {
           <Route path="/posts/:id" component={PostDetail} />
           {/* 교사 초대 링크. 토큰은 SPA 라우팅으로만 다루므로 서버 로그에 남지 않는다. */}
           <Route path="/invite/:token" component={AcceptInvite} />
+          <Route path="/privacy" component={Privacy} />
           <Route component={NotFound} />
         </Switch>
       </main>
@@ -73,8 +75,14 @@ function Router() {
               </div>
             </div>
           </div>
-          <div className="border-t border-white/10 mt-12 pt-8 text-center text-sm text-muted-foreground">
-            © {new Date().getFullYear()} Misa Gangbyeon High School Science Focus. All rights reserved.
+          <div className="border-t border-white/10 mt-12 pt-8 text-center text-sm text-muted-foreground space-y-3">
+            {/* 개인정보처리방침은 눈에 띄어야 한다. 학생 정보를 받는 사이트다. */}
+            <a href="/privacy" className="inline-block font-semibold text-white hover:underline">
+              개인정보처리방침
+            </a>
+            <div>
+              © {new Date().getFullYear()} Misa Gangbyeon High School Science Focus. All rights reserved.
+            </div>
           </div>
         </div>
       </footer>

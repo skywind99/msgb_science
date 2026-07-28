@@ -561,6 +561,15 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
             <li>이용 목적 — 활동 참가자 확인 및 명단 관리</li>
             <li>보유 기간 — 활동 종료 후 30일 이내 삭제</li>
           </ul>
+          {/* 짧은 고지와 전체 방침이 어긋나면 안 된다. 고칠 때 양쪽을 같이 볼 것. */}
+          <a
+            href="/privacy"
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block text-xs font-semibold text-primary hover:underline"
+          >
+            개인정보처리방침 전문 보기
+          </a>
           <label className="flex items-start gap-2 cursor-pointer select-none pt-1">
             <input
               type="checkbox"
