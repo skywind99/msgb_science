@@ -1,8 +1,10 @@
-import type { Post } from "../shared/schema.js";
-import { applyClosesAt } from "../shared/activity.js";
+import type { CalendarEvent } from "../shared/calendarEvent.js";
 
 /**
- * iCalendar(.ics) 생성. RFC 5545.
+ * iCalendar(.ics) 직렬화. RFC 5545.
+ *
+ * 일정 내용을 만드는 일은 `shared/calendarEvent.ts` 가 한다 (클라이언트도 써야 해서).
+ * 여기는 그것을 .ics 형식과 구글 주소로 바꾸는 일만 한다.
  *
  * 알림을 우리가 보내는 게 아니다. 이 파일을 폰 캘린더에 담으면 그 다음부터는
  * **폰이 스스로 알림을 띄운다.** 서버는 텍스트만 내려주고 관여하지 않는다.
@@ -37,7 +39,7 @@ function foldLine(line: string): string {
   let bytes = 0;
 
   for (const char of line) {
-        const size = Buffer.byteLength(char, "utf8");
+    const size = Buffer.byteLength(char, "utf8");
     // 이어지는 줄은 앞에 공백 한 칸이 붙으므로 그만큼 여유를 둔다.
     const limit = out.length === 0 ? LIMIT : LIMIT - 1;
     if (bytes + size > limit) {
@@ -57,75 +59,6 @@ function foldLine(line: string): string {
 /** Date → `20261001T080000Z`. DB 가 UTC 를 담고 있으므로 UTC 로 그대로 쓴다. */
 function toIcsUtc(date: Date): string {
   return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
-}
-
-export type CalendarEvent = {
-  uid: string;
-  start: Date;
-  end: Date;
-  summary: string;
-  location?: string | null;
-  description?: string | null;
-  /** 활동 페이지 주소. 캘린더가 링크로 보여준다. */
-  url?: string | null;
-  /** 시작 기준 알림 시각. `-P1D` = 1일 전, `-PT1H` = 1시간 전 */
-  alarms?: string[];
-};
-
-/** `2026년 10월 1일 17:00`. 학생이 읽는 값이라 기본 로캘 표기보다 다듬는다. */
-function formatKst(date: Date): string {
-  const parts = new Intl.DateTimeFormat("ko-KR", {
-    timeZone: "Asia/Seoul",
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(date);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
-  return `${get("year")}년 ${get("month")}월 ${get("day")}일 ${get("hour")}:${get("minute")}`;
-}
-
-/**
- * 활동 종료가 비어 있을 때 기본 길이.
- * 길이가 0인 일정은 캘린더에서 알아보기 어려워서 한 시간으로 둔다.
- */
-const DEFAULT_DURATION_MS = 60 * 60 * 1000;
-
-/**
- * 게시물 → 캘린더 이벤트.
- * 활동 일시가 없으면 캘린더에 담을 것이 없으므로 null.
- */
-export function postToEvent(post: Post, origin: string): CalendarEvent | null {
-  if (!post.eventStart) return null;
-
-  const start = new Date(post.eventStart);
-  const end = post.eventEnd
-    ? new Date(post.eventEnd)
-    : new Date(start.getTime() + DEFAULT_DURATION_MS);
-
-  const url = `${origin}/posts/${post.id}`;
-  const lines: string[] = [];
-  const closes = applyClosesAt(post);
-  if (post.applyEnabled && closes) lines.push(`신청 마감: ${formatKst(closes)}`);
-  if (post.capacity != null) lines.push(`정원: ${post.capacity}명`);
-  if (post.applyNote) lines.push(`준비물·유의사항: ${post.applyNote}`);
-  lines.push(url);
-
-  return {
-    // UID 가 같으면 다시 담아도 새 일정이 생기지 않고 기존 것이 갱신된다.
-    uid: `activity-${post.id}@msgb-science`,
-    start,
-    end,
-    summary: post.title,
-    location: post.location,
-    description: lines.join("\n"),
-    url,
-    // 하루 전과 한 시간 전. 하루 전 알림은 활동이 내일 이내면 이미 지나가서
-    // 울리지 않으므로, 짧은 쪽을 하나 더 둔다.
-    alarms: ["-P1D", "-PT1H"],
-  };
 }
 
 /**
@@ -178,14 +111,10 @@ export function buildCalendar(events: CalendarEvent[], now = new Date()): string
 /**
  * 구글 캘린더 일정 추가 주소.
  *
- * 왜 필요한가: **안드로이드 크롬은 `.ics` 를 캘린더로 넘기지 않고 다운로드한다.**
- * `text/calendar` 를 렌더할 수 없어서 무조건 파일로 내려받고, 학생이 파일을 찾아
- * 앱을 골라야 한다. `Content-Disposition` 을 바꿔도 달라지지 않는다.
- * 반면 이 주소는 웹 링크라 캘린더 앱이 바로 열리며 일정이 미리 채워진다.
- *
- * **대가: 알림 시각을 지정할 수 없다.** 구글의 TEMPLATE 주소에는 알림 항목이 없어서
- * 사용자의 기본 알림(보통 30분 전)이 적용된다. `.ics` 의 하루 전 알림은 사라진다.
- * 그래서 둘 중 하나를 없애지 말고 기기에 맞춰 함께 제공한다.
+ * 안드로이드에서는 `intent://` 로 앱을 여는 것이 먼저이고
+ * (`shared/calendarEvent.ts`), 이 주소는 그게 안 될 때의 대비책이다.
+ * 앱이 아니라 브라우저에서 열리고, **알림 시각을 지정할 수 없다** —
+ * 구글의 TEMPLATE 주소에는 알림 항목이 없어서 사용자 기본값(보통 30분 전)이 붙는다.
  */
 export function eventToGoogleUrl(e: CalendarEvent): string {
   const params = new URLSearchParams({

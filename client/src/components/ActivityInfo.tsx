@@ -197,7 +197,7 @@ export function ActivityInfo({ post }: { post: PublicPost }) {
 
         {/* 캘린더 담기는 신청과 무관하다. 일정만 챙기고 싶은 학생도 있고,
             종료된 활동이면 담을 이유가 없으므로 그때만 감춘다. */}
-        {post.eventStart && stage !== "ended" && <AddToCalendarLink postId={post.id} />}
+        {post.eventStart && stage !== "ended" && <AddToCalendarLink post={post} />}
 
         {/* 취소·조회는 마감 뒤에도 열어둔다. 신청 여부를 확인할 방법이 필요하다. */}
         <button

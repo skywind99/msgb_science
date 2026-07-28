@@ -11,12 +11,8 @@ import {
   type Post,
 } from "../shared/schema.js";
 import { activityStage, STAGE_REJECT_MESSAGE } from "../shared/activity.js";
-import {
-  buildCalendar,
-  contentDisposition,
-  eventToGoogleUrl,
-  postToEvent,
-} from "./calendar.js";
+import { buildCalendar, contentDisposition, eventToGoogleUrl } from "./calendar.js";
+import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
@@ -621,7 +617,7 @@ export async function registerRoutes(
     const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? req.protocol;
     const origin = `${proto.split(",")[0]}://${req.get("host")}`;
 
-    const event = postToEvent(post, origin);
+    const event = toCalendarEvent(post, origin);
     if (!event) {
       res.status(400).json({ message: "활동 일시가 없어 캘린더에 담을 수 없습니다." });
       return null;
