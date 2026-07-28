@@ -1,6 +1,8 @@
 {
   "buildCommand": "vite build",
   "outputDirectory": "dist/public",
+  "//regions": "서버리스 함수를 서울(icn1)에서 실행한다. 지정하지 않으면 기본값이 미국이라, DB 는 서울(ap-northeast-2)에 있는데 학생 이름·학년·반이 담긴 요청은 미국 서버를 거치게 된다. 개인정보처리방침에 국외 이전 없음이라고 쓰려면 이 설정이 필요하다. 응답 속도도 함께 좋아진다.",
+  "regions": ["icn1"],
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/index" },
     { "source": "/(.*)", "destination": "/index.html" }
