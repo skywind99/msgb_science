@@ -1,8 +1,20 @@
+# Supabase 와 GitHub Actions 를 둘 다 살려 두는 작업.
+#
+# 두 가지 "잠들기"를 막는다.
+#  1. Supabase 무료 플랜은 **7일간 DB 요청이 없으면 프로젝트를 일시정지**한다.
+#     그러면 사이트 전체가 죽는다. 그래서 주기적으로 DB 를 건드린다.
+#  2. GitHub 은 **저장소가 60일간 조용하면 예약 워크플로를 꺼 버린다.**
+#     그러면 1번 방어가 통째로 사라진다. 그래서 빈 커밋을 남긴다.
+#
+# 방학처럼 아무도 손대지 않는 기간이 길어질 때를 위한 장치다.
+
 name: Keep Everything Alive
 
 on:
   schedule:
-    - cron: '0 0 */3 * *' # 3일마다 실행
+    # 2일마다. Supabase 한계는 7일인데, 한 번 실패해도 여유가 있어야 한다.
+    # 3일 간격이면 두 번 연속 실패할 때 9일이 되어 이미 늦다.
+    - cron: '0 0 */2 * *'
   workflow_dispatch:
 
 jobs:
@@ -11,35 +23,22 @@ jobs:
     permissions:
       contents: write
     env:
-      # 신청 기록 정리에 쓴다. 시크릿이 없으면 해당 단계를 건너뛴다.
+      # 신청 기록 정리에 쓴다. 이 접속 자체가 DB 를 깨우는 역할도 한다.
+      # secrets 컨텍스트는 스텝의 if 에서 못 쓰므로 여기로 옮겨 두고 env 를 본다.
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
     steps:
-      # 1. Supabase 깨우기 (오류 발생 시 Action 실패하도록 -f 옵션 추가)
-      - name: Ping Supabase
-        env:
-          SB_URL: ${{ secrets.SUPABASE_URL }}
-          SB_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-        run: |
-          echo "Pinging Supabase API..."
-          curl -f -s -X GET "$SB_URL/rest/v1/posts?select=*&limit=1" \
-          -H "apikey: $SB_KEY" \
-          -H "Authorization: Bearer $SB_KEY"
-          echo "Ping successful!"
-
-      # 2. 레포지토리 체크아웃
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # 3. 보유 기간이 지난 신청 기록 삭제
-      #
-      # 학생 신청 폼에 "활동 종료 후 30일 이내 삭제" 라고 고지했다. 이 단계가 그
-      # 약속을 지킨다. 조건과 기간은 script/cleanup.ts 에 있다.
-      #
-      # DATABASE_URL 시크릿이 없으면 이 단계는 건너뛴다. Supabase 깨우기가
-      # 정리 실패 때문에 같이 멈추면 프로젝트가 일시정지되므로, 여기서 죽이지 않는다.
-      # (건너뛰면 로그에 남으니 시크릿 누락은 눈에 띈다.)
-      # secrets 컨텍스트는 스텝의 if 에서 쓸 수 없다. 잡 레벨 env 로 옮겨 두고
-      # env 를 본다 (env 는 if 에서 쓸 수 있다).
+      # 시크릿이 없으면 조용히 지나가지 않고 눈에 띄게 남긴다.
+      # 학생에게 고지한 30일 삭제가 동작하지 않는 상태이기 때문이다.
+      - name: Warn if DATABASE_URL is missing
+        if: env.DATABASE_URL == ''
+        run: |
+          echo "::warning::DATABASE_URL 시크릿이 없어 신청 기록 정리를 건너뜁니다."
+          echo "::warning::신청 폼에 고지한 '활동 종료 30일 후 삭제' 가 동작하지 않습니다."
+          echo "Settings → Secrets and variables → Actions 에서 DATABASE_URL 을 추가하세요."
+
       - name: Setup Node
         if: env.DATABASE_URL != ''
         uses: actions/setup-node@v4
@@ -47,6 +46,9 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
+      # 보유 기간이 지난 신청 기록 삭제. 조건과 기간은 script/cleanup.ts 에 있다.
+      # 실패해도 뒤 단계를 막지 않는다 — 정리 한 번 못 했다고 keep-alive 까지
+      # 멈추면 프로젝트가 일시정지되고 그게 훨씬 큰 문제다.
       - name: Delete expired applications
         if: env.DATABASE_URL != ''
         continue-on-error: true
@@ -54,10 +56,32 @@ jobs:
           npm ci
           npx tsx script/cleanup.ts
 
-      # 4. 빈 커밋으로 GitHub Action 일시정지 방지
-      - name: Git Keep-alive
+      # GitHub 이 60일 무활동 시 예약 워크플로를 끄는 것을 막는다.
+      #
+      # [skip ci] 를 붙이는 이유: 이 커밋 때문에 Vercel 이 2일마다 재배포하는 것은
+      # 낭비다. Vercel 은 커밋 메시지에 이 표시가 있으면 빌드를 건너뛴다.
+      - name: Git keep-alive commit
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "chore: Keep-alive commit $(date +'%Y-%m-%d')"
+          git commit --allow-empty -m "chore: keep-alive $(date +'%Y-%m-%d') [skip ci]"
           git push
+
+      # DB 를 한 번 더 깨운다. 위 정리 단계가 건너뛰어졌거나 실패했을 때의 대비책이다.
+      #
+      # 맨 마지막에 두는 이유: 이 단계가 실패하면 실행이 빨간색으로 표시되어 눈에 띄는데,
+      # 앞에 두면 그 실패가 정리·빈 커밋까지 막아 버린다. 순서를 바꾸지 말 것.
+      - name: Ping Supabase REST
+        env:
+          SB_URL: ${{ secrets.SUPABASE_URL }}
+          SB_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if [ -z "$SB_URL" ] || [ -z "$SB_KEY" ]; then
+            echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY 시크릿이 없어 REST 핑을 건너뜁니다."
+            exit 0
+          fi
+          echo "Pinging Supabase..."
+          curl -f -s -o /dev/null "$SB_URL/rest/v1/posts?select=id&limit=1" \
+            -H "apikey: $SB_KEY" \
+            -H "Authorization: Bearer $SB_KEY"
+          echo "Ping successful."
