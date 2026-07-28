@@ -10,7 +10,7 @@ import {
   toDate,
   type ActivityStage as Stage,
 } from "@shared/activity";
-import { ApplyDialog, LookupDialog } from "@/components/ApplyDialog";
+import { AddToCalendarLink, ApplyDialog, LookupDialog } from "@/components/ApplyDialog";
 
 /**
  * 게시물 상세 상단의 활동 정보 + 신청 버튼.
@@ -194,6 +194,10 @@ export function ActivityInfo({ post }: { post: PublicPost }) {
                   : "종료된 활동입니다."}
           </p>
         )}
+
+        {/* 캘린더 담기는 신청과 무관하다. 일정만 챙기고 싶은 학생도 있고,
+            종료된 활동이면 담을 이유가 없으므로 그때만 감춘다. */}
+        {post.eventStart && stage !== "ended" && <AddToCalendarLink postId={post.id} />}
 
         {/* 취소·조회는 마감 뒤에도 열어둔다. 신청 여부를 확인할 방법이 필요하다. */}
         <button

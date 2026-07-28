@@ -134,6 +134,21 @@ export const api = {
     },
   },
 
+  // 활동 하나를 폰 캘린더에 담는 .ics 파일. 공개 경로다 (활동 정보만 들어간다).
+  // 알림은 담긴 뒤 폰이 스스로 띄운다. 서버는 텍스트만 내려준다.
+  calendar: {
+    activity: {
+      method: "GET" as const,
+      path: "/api/posts/:id/calendar.ics" as const,
+      responses: {
+        // text/calendar 본문
+        200: z.string(),
+        400: errorSchemas.validation,
+        404: errorSchemas.notFound,
+      },
+    },
+  },
+
   // 교사 초대. 자율 가입이 없으므로 계정은 이 경로로만 생긴다.
   // 발급·목록·삭제는 admin 전용, 확인·수락은 링크를 가진 사람이 쓰는 공개 경로다.
   invites: {

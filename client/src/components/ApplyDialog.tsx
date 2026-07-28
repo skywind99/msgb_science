@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { X, Loader2, KeyRound, Lock, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
+import {
+  X,
+  Loader2,
+  CalendarPlus,
+  KeyRound,
+  Lock,
+  ShieldCheck,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { api, buildUrl } from "@shared/routes";
 import type {
   ApplyResponse,
@@ -194,6 +203,28 @@ function StatusLine({ app }: { app: MyApplication }) {
 }
 
 /**
+ * 활동을 폰 캘린더에 담는 버튼.
+ *
+ * 알림을 우리가 보내는 게 아니다. 담기면 그 뒤로는 폰이 스스로 울린다
+ * (`server/calendar.ts`). 그래서 학생이 이걸 한 번 눌러야 의미가 있고,
+ * 신청 직후가 가장 누를 확률이 높은 자리다.
+ *
+ * fetch 로 받아 Blob 으로 만들지 않고 평범한 링크로 둔다. 그래야 iOS 사파리가
+ * text/calendar 응답을 캘린더 앱에 넘긴다.
+ */
+export function AddToCalendarLink({ postId }: { postId: number }) {
+  return (
+    <a
+      href={buildUrl(api.calendar.activity.path, { id: postId })}
+      className="w-full py-2.5 rounded-xl border-2 border-border text-sm font-bold hover:bg-muted/50 transition-colors inline-flex items-center justify-center gap-2"
+    >
+      <CalendarPlus className="w-4 h-4" />
+      내 캘린더에 추가
+    </a>
+  );
+}
+
+/**
  * 신청 완료 안내.
  *
  * 비밀번호는 학생이 직접 정한 값이라 여기서 다시 보여줄 필요가 없다.
@@ -303,6 +334,11 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
             </p>
           )}
           <RememberCard />
+
+          {/* 활동 일시가 있어야 캘린더에 담을 수 있다. 신청을 받는 글은 일시가
+              필수지만, 서버 검증을 우회한 글이 있을 수 있으니 확인한다. */}
+          {post.eventStart && <AddToCalendarLink postId={post.id} />}
+
           <button
             type="button"
             onClick={onClose}

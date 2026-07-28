@@ -11,6 +11,7 @@ import {
   type Post,
 } from "../shared/schema.js";
 import { activityStage, STAGE_REJECT_MESSAGE } from "../shared/activity.js";
+import { buildCalendar, contentDisposition, postToEvent } from "./calendar.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
@@ -590,6 +591,32 @@ export async function registerRoutes(
       console.error("applications summary error:", err);
       res.status(500).json({ message: "신청 현황을 불러올 수 없습니다." });
     }
+  });
+
+  // ── 캘린더 (.ics) ────────────────────────────────────────
+  // 활동 하나를 폰 캘린더에 담는 파일. 담긴 뒤로는 폰이 스스로 알림을 띄우고
+  // 서버는 관여하지 않는다. 활동 정보만 들어가므로 공개 경로다.
+  app.get(api.calendar.activity.path, async (req, res) => {
+    const id = parseInt(String(req.params.id));
+    if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
+
+    const post = await storage.getPost(id);
+    if (!post) return res.status(404).json({ message: "게시물을 찾을 수 없습니다." });
+
+    // 프록시 뒤에 있으므로 원래 스킴은 헤더에서 본다. 설명에 넣을 링크에 쓴다.
+    const proto = (req.headers["x-forwarded-proto"] as string | undefined) ?? req.protocol;
+    const origin = `${proto.split(",")[0]}://${req.get("host")}`;
+
+    const event = postToEvent(post, origin);
+    if (!event) {
+      return res.status(400).json({ message: "활동 일시가 없어 캘린더에 담을 수 없습니다." });
+    }
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", contentDisposition(post.title, `activity-${post.id}`));
+    // 활동 정보가 바뀔 수 있으니 오래 캐시하지 않는다.
+    res.setHeader("Cache-Control", "public, max-age=300");
+    res.send(buildCalendar([event]));
   });
 
   // ── 교사 초대 ────────────────────────────────────────────
