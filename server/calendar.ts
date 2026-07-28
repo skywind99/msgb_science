@@ -128,7 +128,15 @@ export function eventToGoogleUrl(e: CalendarEvent): string {
 }
 
 /**
- * 내려받기 파일명.
+ * `.ics` 응답의 Content-Disposition.
+ *
+ * **`attachment` 가 아니라 `inline` 이다.** `attachment` 는 "첨부파일로 받아라"라서
+ * 아이패드 사파리가 캘린더 대신 다운로드 관리자로 보낸다. 아이폰은 같은 헤더에도
+ * 캘린더로 넘겨주는데 아이패드는 데스크톱급이라 다르게 동작한다.
+ * `inline` 은 "그 자리에서 처리해라"이므로 캘린더 앱으로 넘어갈 여지를 준다.
+ *
+ * 데스크톱 브라우저는 `text/calendar` 를 화면에 그릴 수 없어서 어차피 내려받는다.
+ * 그래서 `inline` 으로 바꿔도 PC 동작은 달라지지 않고 파일명만 유지된다.
  *
  * 한글 파일명은 `filename=` 에 그대로 넣을 수 없다(헤더는 latin1 만 담는다).
  * RFC 5987 의 `filename*` 로 UTF-8 을 싣고, 못 읽는 클라이언트를 위해
@@ -137,5 +145,5 @@ export function eventToGoogleUrl(e: CalendarEvent): string {
 export function contentDisposition(title: string, fallback: string): string {
   const safe = title.replace(/[\\/:*?"<>|\r\n]/g, "_").slice(0, 60);
   const encoded = encodeURIComponent(`${safe}.ics`);
-  return `attachment; filename="${fallback}.ics"; filename*=UTF-8''${encoded}`;
+  return `inline; filename="${fallback}.ics"; filename*=UTF-8''${encoded}`;
 }
