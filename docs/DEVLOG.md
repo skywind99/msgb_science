@@ -10,6 +10,56 @@
 
 ---
 
+## 2026-07-28 — `x-admin-password` 제거 (1단계 완료)
+
+### 무엇을 없앴나
+- `server/auth.ts` — `legacyAdmin`, `AuthUser.legacy`, 미사용 `requireTeacher`
+- `client/src/contexts/admin.tsx` — localStorage 평문 비밀번호, `login()`, `useAdminPassword`
+- `POST /api/admin/verify` — 이제 `GET /api/me` 가 대신한다
+- 로그인 창의 "관리자 비밀번호로 로그인" 전환
+- `.env.example` 의 `ADMIN_PASSWORD`
+- 미사용 인증 의존성 5개와 각 `@types` (`script/build.ts` 번들 목록에서도)
+
+### 왜
+평문 비밀번호를 localStorage 에 두고 매 요청에 실어 보내던 구조다.
+XSS 한 번에 새고, 만료가 없고, 모두가 같은 값을 써서 누가 무엇을 했는지 알 수 없었다.
+
+기능적으로도 걸림돌이었다. 이 방식으로 들어오면 `profiles` 행이 없어
+게시물 `authorId` 를 null 로 넣어야 했고, 그래서 담당 교사가 자기 활동 명단을
+볼 수 없었다. 제거하니 `authorId` 가 항상 채워진다.
+
+### 순서를 지켰다
+로그인 안전망을 없애는 작업이라 **아이디·이메일 로그인이 실제로 되는 것을 확인한 뒤에**
+제거했다. 반대 순서였으면 잠겼을 때 되돌릴 방법이 없다.
+
+`logout()` 에는 `localStorage.removeItem("admin_pw")` 를 남겨 뒀다.
+예전에 로그인한 브라우저에 값이 그대로 남아 있으므로 한동안 지워 주는 것이 낫다.
+
+환경변수가 없을 때(`VITE_SUPABASE_*` 누락) 로그인 창이 조용히 실패하지 않도록
+안내 문구를 넣었다. 예전에는 관리자 비밀번호가 안전망이었지만 이제 없다.
+
+### 검증에서 배운 것
+`/api/admin/verify` 가 404 인지 확인하려 했는데 dev 서버는 매칭 안 되는 경로에
+SPA HTML(200)을 돌려준다. Vite 미들웨어의 폴백이다.
+"404 인가" 대신 **"인증을 통과시키지 않는가"** 를 확인하도록 바꿨다.
+없어진 API 경로를 dev 서버에서 상태 코드로 검증하려 하면 이 함정에 빠진다.
+
+관리자 비밀번호를 몰라 토큰 경로를 검증할 수 없었는데, 초대로 임시 admin 계정을
+만들어 그 토큰으로 확인했다. 검증이 막히면 검증할 수 있는 상태를 만들면 된다.
+
+### 검증
+19개 케이스 통과. 옛 헤더로 `/api/me`·`/api/teachers`·`/api/invites`·
+`/api/admin/popups`·글 작성·이미지 업로드 전부 401, `/api/admin/verify` 인증 불가,
+아이디 로그인 → `/api/me` 200(`legacy` 필드 없음, role admin),
+글 작성 시 `authorId` 가 실제 계정으로 채워짐, 공개 경로 4개 200.
+
+임시 계정과 검증용 게시물은 지웠다.
+
+### 남은 것
+- `.env` 와 Vercel 의 `ADMIN_PASSWORD` 삭제. 코드가 읽지 않으므로 남겨둬도 무해하다.
+
+---
+
 ## 2026-07-28 — 교사 로그인을 이메일에서 아이디로
 
 ### 왜

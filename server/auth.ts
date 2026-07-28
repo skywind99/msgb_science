@@ -12,8 +12,6 @@ export interface AuthUser {
   id: string;
   name: string;
   role: Role;
-  /** 기존 관리자 비밀번호로 통과한 경우. 1단계 마무리 시 제거 대상. */
-  legacy: boolean;
 }
 
 export interface AuthedRequest extends Request {
@@ -58,29 +56,23 @@ async function userFromToken(token: string): Promise<AuthUser | null> {
     id: profile.id,
     name: profile.name,
     role: profile.role === "admin" ? "admin" : "teacher",
-    legacy: false,
   };
 }
 
-/** 기존 x-admin-password 헤더. 1단계 마무리 시 이 함수와 호출부를 함께 제거한다. */
-function legacyAdmin(req: Request): AuthUser | null {
-  const expected = process.env.ADMIN_PASSWORD;
-  const provided = req.headers["x-admin-password"] as string | undefined;
-  if (!expected || provided !== expected) return null;
-  return { id: "legacy-admin", name: "관리자", role: "admin", legacy: true };
-}
-
 /**
- * 요청에서 사용자를 알아낸다. Authorization: Bearer 토큰을 먼저 보고,
- * 없으면 기존 관리자 비밀번호를 본다. 둘 다 아니면 null.
+ * 요청에서 사용자를 알아낸다. Supabase Auth 토큰만 받는다.
+ *
+ * 2026-07-28 에 `x-admin-password` 헤더 인증을 제거했다. 그 방식은
+ * 평문 비밀번호를 localStorage 에 두고 매 요청에 실어 보냈고, 만료가 없었고,
+ * 모두가 같은 값을 써서 누가 무엇을 했는지 알 수 없었다. 게시물 `authorId` 가
+ * 비어서 담당 교사가 자기 활동 명단을 볼 수 없는 문제도 여기서 왔다.
+ *
+ * 되돌리지 말 것. 계정이 필요하면 초대 링크로 발급한다.
  */
 export async function resolveUser(req: Request): Promise<AuthUser | null> {
   const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) {
-    const user = await userFromToken(header.slice(7).trim());
-    if (user) return user;
-  }
-  return legacyAdmin(req);
+  if (!header?.startsWith("Bearer ")) return null;
+  return await userFromToken(header.slice(7).trim());
 }
 
 /**
@@ -101,18 +93,6 @@ export async function ensureAuth(
   }
   (req as AuthedRequest).authUser = user;
   return user;
-}
-
-/** 로그인된 교사 또는 관리자만 통과 */
-export function requireTeacher() {
-  return async (req: Request, res: Response, next: NextFunction) => {
-    const user = await resolveUser(req);
-    if (!user) {
-      return res.status(401).json({ message: "로그인이 필요합니다." });
-    }
-    (req as AuthedRequest).authUser = user;
-    next();
-  };
 }
 
 /** admin 역할만 통과 */

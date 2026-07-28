@@ -21,36 +21,19 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
   const [pw, setPw] = useState("");
   const [loginId, setLoginId] = useState("");
   const [loading, setLoading] = useState(false);
-  const { login, loginWithEmail, teacherLoginAvailable } = useAdmin();
-  // 교사 로그인이 설정돼 있으면 그것을 기본으로 보여준다.
-  const [mode, setMode] = useState<"teacher" | "legacy">(
-    teacherLoginAvailable ? "teacher" : "legacy"
-  );
+  const { loginWithEmail, teacherLoginAvailable } = useAdmin();
   const { toast } = useToast();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-
-    if (mode === "teacher") {
-      const res = await loginWithEmail(loginId, pw);
-      setLoading(false);
-      if (res.ok) {
-        toast({ title: "로그인되었습니다." });
-        onClose();
-      } else {
-        toast({ title: res.message ?? "로그인에 실패했습니다.", variant: "destructive" });
-      }
-      return;
-    }
-
-    const ok = await login(pw);
+    const res = await loginWithEmail(loginId, pw);
     setLoading(false);
-    if (ok) {
-      toast({ title: "관리자로 로그인되었습니다." });
+    if (res.ok) {
+      toast({ title: "로그인되었습니다." });
       onClose();
     } else {
-      toast({ title: "비밀번호가 올바르지 않습니다.", variant: "destructive" });
+      toast({ title: res.message ?? "로그인에 실패했습니다.", variant: "destructive" });
     }
   };
 
@@ -68,18 +51,33 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
             <ShieldCheck className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <h2 className="text-lg font-bold text-foreground">
-              {mode === "teacher" ? "교사 로그인" : "관리자 로그인"}
-            </h2>
+            <h2 className="text-lg font-bold text-foreground">교사 로그인</h2>
             <p className="text-xs text-muted-foreground">
-              {mode === "teacher"
-                ? "발급받은 아이디와 비밀번호를 입력하세요"
-                : "관리자 비밀번호를 입력하세요"}
+              발급받은 아이디와 비밀번호를 입력하세요
             </p>
           </div>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === "teacher" && (
+
+        {/* 환경변수가 없으면 로그인 자체가 불가능하다. 예전에는 관리자 비밀번호가
+            안전망이었지만 그 방식을 제거했으므로, 조용히 실패하지 않게 알린다. */}
+        {!teacherLoginAvailable ? (
+          <div className="space-y-4">
+            <p className="text-sm text-foreground">
+              로그인 설정이 완료되지 않았습니다. 배포 환경변수
+              <code className="mx-1 px-1 rounded bg-muted text-xs">VITE_SUPABASE_URL</code>과
+              <code className="mx-1 px-1 rounded bg-muted text-xs">VITE_SUPABASE_ANON_KEY</code>를
+              확인해 주세요.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full px-4 py-3 rounded-xl font-semibold border-2 border-border hover:bg-muted/50 transition-colors"
+            >
+              닫기
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
             <input
               type="text"
               value={loginId}
@@ -91,44 +89,34 @@ function AdminLoginModal({ onClose }: { onClose: () => void }) {
               autoFocus
               className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary transition-all"
             />
-          )}
-          <input
-            type="password"
-            value={pw}
-            onChange={(e) => setPw(e.target.value)}
-            placeholder="비밀번호"
-            autoComplete="current-password"
-            autoFocus={mode === "legacy"}
-            className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary transition-all"
-          />
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-3 rounded-xl font-semibold text-foreground hover:bg-black/5 transition-colors"
-            >
-              취소
-            </button>
-            <button
-              type="submit"
-              disabled={loading || !pw || (mode === "teacher" && !loginId)}
-              className="flex-1 px-4 py-3 rounded-xl font-semibold bg-primary text-primary-foreground disabled:opacity-50 transition-colors"
-            >
-              {loading ? "확인 중..." : "로그인"}
-            </button>
-          </div>
-        </form>
-        {teacherLoginAvailable && (
-          <button
-            type="button"
-            onClick={() => {
-              setMode(mode === "teacher" ? "legacy" : "teacher");
-              setPw("");
-            }}
-            className="mt-4 w-full text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {mode === "teacher" ? "관리자 비밀번호로 로그인" : "교사 계정으로 로그인"}
-          </button>
+            <input
+              type="password"
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              placeholder="비밀번호"
+              autoComplete="current-password"
+              className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary transition-all"
+            />
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="flex-1 px-4 py-3 rounded-xl font-semibold text-foreground hover:bg-black/5 transition-colors"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={loading || !pw || !loginId}
+                className="flex-1 px-4 py-3 rounded-xl font-semibold bg-primary text-primary-foreground disabled:opacity-50 transition-colors"
+              >
+                {loading ? "확인 중..." : "로그인"}
+              </button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              비밀번호를 잊었으면 관리자에게 재설정을 요청해 주세요.
+            </p>
+          </form>
         )}
       </motion.div>
     </div>

@@ -33,7 +33,13 @@ docs/            TODO, DEVLOG, UPDATE
 공지 게시판을 **활동 신청까지 되는 하이브리드 게시판**으로 확장한다.
 교사가 활동을 올리면 학생이 신청하고, 교사가 명단을 받는다.
 
-진행 순서는 `docs/TODO.md`의 1~5단계를 따른다. 현재 1단계(교사 인증) 착수 전.
+진행 순서는 `docs/TODO.md`의 1~5단계를 따른다.
+
+현재 상태 (2026-07-28)
+- 1단계 교사 인증 **완료** — 아이디 로그인, 초대 링크, 비밀번호 재설정, `x-admin-password` 제거
+- 2~4단계 배포 완료 — 활동 게시물, 학생 신청, 교사용 명단
+- 신청 기록 30일 자동 삭제 동작 (`script/cleanup.ts`)
+- 남은 것: 5단계 ICS 피드, 참가 확정 명단, 개인정보처리방침 페이지
 
 ## 확정된 설계 결정 — 되돌리지 말 것
 
@@ -60,6 +66,12 @@ docs/            TODO, DEVLOG, UPDATE
 교사 여러 명 + 역할 구분 + 초대 흐름이 필요한데 전부 Supabase Auth에 있다.
 자율 가입은 열지 않는다. 관리자가 발급한 초대 링크로만 계정 생성.
 역할은 `admin`(전체)과 `teacher`(자기 활동만) 두 단계.
+
+**`x-admin-password` 헤더 인증은 2026-07-28에 제거했다. 되돌리지 말 것.**
+평문 비밀번호를 localStorage에 두고 매 요청에 실어 보내던 구조였다 — XSS 한 번에 새고,
+만료가 없고, 모두가 같은 값을 써서 누가 무엇을 했는지 알 수 없었다.
+게시물 `authorId`가 비어 담당 교사가 자기 활동 명단을 못 보던 문제도 여기서 왔다.
+이제 Supabase Auth 토큰만 받는다. 계정이 필요하면 초대 링크로 발급한다.
 
 **로그인은 이메일이 아니라 아이디다** (2026-07-28 변경).
 Supabase Auth가 이메일을 요구하므로 `kim` → `kim@msgb.invalid`로 바꿔 넘긴다
@@ -98,13 +110,11 @@ iOS는 홈 화면 추가 시에만 웹푸시가 동작해서 학생 절반이 �
 
 고칠 때 참고. 상세는 `docs/TODO.md`.
 
-- `client/src/contexts/admin.tsx` — 평문 비밀번호를 localStorage에 저장하고 `x-admin-password` 헤더로 전송. 1단계에서 전면 제거 대상.
 - `server/routes.ts` — 팝업 라우트가 `insertPopupSchema`를 쓰지 않고 `req.body`를 그대로 전달.
 - `server/routes.ts` — 시드 로직이 `registerRoutes()` 안에 있어 콜드 스타트마다 DB 조회 발생. `script/seed.ts`로 분리해야 함.
 - 사이언스타임즈 뉴스 캐시가 모듈 전역 변수라 서버리스에서 무효.
 - 뉴스 스크래핑이 `indexOf` + 정규식 기반이라 상대 사이트 마크업 변경에 취약.
 - `api/_source.ts`가 `api/index.ts`와 중복으로 보임. 확인 후 정리.
-- `package.json`에 미사용 인증 의존성(`passport`, `express-session`, `connect-pg-simple`, `memorystore`) 잔존.
 - 푸터 주소·전화번호가 `000` 자리표시자 (`client/src/App.tsx`).
 
 ## 작업 규칙

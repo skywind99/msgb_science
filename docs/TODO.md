@@ -40,7 +40,7 @@
 - 슬라이스 2 (2026-07-27) — 첫 admin 계정 활성화 + 초대 링크 흐름 완성.
   이제 교사 계정을 발급할 수 있다.
 - 슬라이스 3 (2026-07-28) — 로그인을 아이디 방식으로 전환 + 관리자용 비밀번호 재설정.
-- **남은 일은 `x-admin-password` 제거 하나뿐이다.**
+- 슬라이스 4 (2026-07-28) — `x-admin-password` 제거. **1단계 완료.**
 
 - [x] `profiles` 테이블 생성 (`id`는 `auth.users.id` 사용)
 - [x] Supabase Auth 로그인 추가 (`server/auth.ts`, `client/src/lib/supabase.ts`)
@@ -55,18 +55,23 @@
       `signUp` 을 부르면 자율 가입이 꺼져 있어 실패한다.
 - [x] 역할 두 단계: `admin`(전체 관리) / `teacher`(자기 활동만 관리)
       교사는 초대 발급·목록 403, 남의 활동 명단 403 을 테스트로 확인했다.
-- [ ] 기존 `x-admin-password` 헤더 인증 전면 제거 — **이제 제거할 수 있는 상태다.**
-      제거 전에 admin 계정 이메일 로그인이 확실히 되는지 확인할 것.
-      잠기면 되돌릴 방법이 없다.
+- [x] 기존 `x-admin-password` 헤더 인증 전면 제거 (2026-07-28)
+      아이디·이메일 로그인이 브라우저에서 되는 것을 확인한 뒤 제거했다.
   - `client/src/contexts/admin.tsx` — localStorage 평문 비밀번호 저장 폐기
-  - `server/auth.ts` — `legacyAdmin` 과 호출부 제거
+  - `server/auth.ts` — `legacyAdmin`, `requireTeacher`(미사용) 제거
+  - `POST /api/admin/verify` 제거 (`GET /api/me` 가 대신한다)
+  - 이제 게시물 `authorId` 가 항상 채워진다. 그 전에 만든 글은 null 이라 admin 만
+    명단을 볼 수 있다.
 - [x] 교사 로그인을 아이디 방식으로 (2026-07-28) — `shared/teacherId.ts`.
       `kim` → `kim@msgb.invalid`. 교사에게 이메일을 받지 않는다.
 - [x] 교사 목록 조회 + 비밀번호 재설정 (`InviteManager.tsx` 의 "교사 계정" 영역)
       **아이디 방식은 메일로 스스로 재설정할 수 없어 이게 유일한 복구 수단이다.**
 - [ ] 계정 관리 나머지 — 이름·권한 변경, 계정 비활성화.
       지금은 `profiles` 를 직접 고쳐야 한다.
-- [ ] 미사용 의존성 정리 — `passport`, `passport-local`, `express-session`, `connect-pg-simple`, `memorystore`
+- [x] 미사용 의존성 정리 (2026-07-28) — `passport`, `passport-local`, `express-session`,
+      `connect-pg-simple`, `memorystore` 및 각 `@types`. `script/build.ts` 번들 목록에서도 제거.
+- [ ] `.env` 와 Vercel 환경변수의 `ADMIN_PASSWORD` 삭제 — 코드가 더 이상 읽지 않는다.
+      남겨둬도 동작에 영향은 없다.
 - [ ] 로그인 실패 요청 제한 (Supabase Auth 기본 제한 확인 후 부족하면 보완)
 
 ---

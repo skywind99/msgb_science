@@ -404,19 +404,13 @@ export async function registerRoutes(
     }
   });
 
-  // 로그인 확인. 기존 관리자 비밀번호와 교사 토큰 둘 다 여기를 통과한다.
-  app.post("/api/admin/verify", async (req, res) => {
-    const user = await ensureAuth(req, res);
-    if (!user) return;
-    res.json({ ok: true, role: user.role, name: user.name });
-  });
-
-  // 현재 로그인 상태. 교사 로그인 후 클라이언트가 역할을 확인하는 데 쓴다.
+  // 현재 로그인 상태. 로그인 후 클라이언트가 역할을 확인하는 데 쓴다.
+  // (`/api/admin/verify` 는 x-admin-password 제거와 함께 없앴다. 이 경로가 대신한다.)
   app.get("/api/me", async (req, res) => {
     const user = await ensureAuth(req, res);
     if (!user) return;
-    const { id, name, role, legacy } = (req as AuthedRequest).authUser ?? user;
-    res.json({ id, name, role, legacy });
+    const { id, name, role } = user;
+    res.json({ id, name, role });
   });
 
   app.post(api.posts.create.path, async (req, res) => {
@@ -425,9 +419,10 @@ export async function registerRoutes(
     try {
       const { applyPassword, ...input } = api.posts.create.input.parse(req.body);
       const post = await storage.createPost({
+        // 작성자를 남긴다. 담당 교사가 자기 활동 명단을 보려면 이 값이 있어야 한다.
+        // x-admin-password 로 만든 옛 게시물은 이 값이 null 이라 admin 만 볼 수 있다.
         ...input,
-        // 기존 관리자 비밀번호로 들어온 경우엔 profiles 행이 없어 작성자를 남길 수 없다.
-        authorId: user.legacy ? null : user.id,
+        authorId: user.id,
         applyPasswordHash: applyPassword ? hashApplyPassword(applyPassword) : null,
       });
       res.status(201).json(toPublicPost(post));

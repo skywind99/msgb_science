@@ -8,39 +8,40 @@ export interface AuthUser {
   id: string;
   name: string;
   role: Role;
-  legacy: boolean;
 }
 
 interface AdminContextType {
-  /** 관리자 기능 노출 여부. 기존 비밀번호 로그인과 교사 로그인 모두 true 가 된다. */
+  /** 관리자 기능 노출 여부. 로그인한 교사·관리자면 true. */
   isAdmin: boolean;
-  /** 기존 관리자 비밀번호. 1단계 마무리 시 제거 대상. */
-  password: string;
-  /** 로그인한 교사 정보. 기존 비밀번호 로그인일 때는 null. */
+  /** 로그인한 사용자. 비로그인이면 null. */
   user: AuthUser | null;
-  /** API 호출에 그대로 펼쳐 쓰는 인증 헤더. 교사 토큰이 있으면 그것을, 없으면 기존 헤더를 보낸다. */
+  /** API 호출에 그대로 펼쳐 쓰는 인증 헤더 */
   authHeaders: Record<string, string>;
-  /** 교사 이메일 로그인 사용 가능 여부 (VITE_SUPABASE_* 설정 시 true) */
+  /** 로그인 사용 가능 여부 (VITE_SUPABASE_* 설정 시 true) */
   teacherLoginAvailable: boolean;
-  login: (password: string) => Promise<boolean>;
-  /** 교사 로그인. 첫 인자는 아이디다 (`@` 가 있으면 이메일로 취급). */
+  /** 아이디(또는 기존 이메일)와 비밀번호로 로그인 */
   loginWithEmail: (loginId: string, password: string) => Promise<{ ok: boolean; message?: string }>;
   logout: () => void;
 }
 
 const AdminContext = createContext<AdminContextType>({
   isAdmin: false,
-  password: "",
   user: null,
   authHeaders: {},
   teacherLoginAvailable: false,
-  login: async () => false,
   loginWithEmail: async () => ({ ok: false }),
   logout: () => {},
 });
 
+/**
+ * 로그인 상태.
+ *
+ * 2026-07-28 에 기존 `x-admin-password` 방식을 제거했다. 평문 비밀번호를
+ * localStorage 에 두고 매 요청에 실어 보내던 구조였다 — XSS 한 번에 새고,
+ * 만료가 없고, 모두가 같은 값을 써서 누가 무엇을 했는지 알 수 없었다.
+ * 되돌리지 말 것.
+ */
 export function AdminProvider({ children }: { children: React.ReactNode }) {
-  const [password, setPassword] = useState(() => localStorage.getItem("admin_pw") || "");
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
 
@@ -88,22 +89,8 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const authHeaders = useMemo<Record<string, string>>(() => {
     const headers: Record<string, string> = {};
     if (accessToken && user) headers.Authorization = `Bearer ${accessToken}`;
-    else if (password) headers["x-admin-password"] = password;
     return headers;
-  }, [accessToken, user, password]);
-
-  const login = async (pwd: string): Promise<boolean> => {
-    const res = await fetch("/api/admin/verify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-password": pwd },
-    });
-    if (res.ok) {
-      setPassword(pwd);
-      localStorage.setItem("admin_pw", pwd);
-      return true;
-    }
-    return false;
-  };
+  }, [accessToken, user]);
 
   /**
    * 교사 로그인. 입력은 아이디이고 내부적으로 이메일로 바꿔 Supabase 에 넘긴다
@@ -140,24 +127,23 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
-    setPassword("");
-    localStorage.removeItem("admin_pw");
     setUser(null);
     setAccessToken(null);
     void supabase?.auth.signOut();
+    // 옛 방식이 남겨둔 평문 비밀번호를 지운다. 이 줄은 한동안 두어야 한다 —
+    // 예전에 로그인한 브라우저에 값이 그대로 남아 있다.
+    localStorage.removeItem("admin_pw");
   };
 
-  const isAdmin = !!user || !!password;
+  const isAdmin = !!user;
 
   return (
     <AdminContext.Provider
       value={{
         isAdmin,
-        password,
         user,
         authHeaders,
         teacherLoginAvailable: isTeacherLoginAvailable,
-        login,
         loginWithEmail,
         logout,
       }}
@@ -168,6 +154,5 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
 }
 
 export const useAdmin = () => useContext(AdminContext);
-export const useAdminPassword = () => useContext(AdminContext).password;
 /** API 호출용 인증 헤더 */
 export const useAuthHeaders = () => useContext(AdminContext).authHeaders;
