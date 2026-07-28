@@ -184,7 +184,7 @@ function StorageBadge() {
   const color = pct > 80 ? "text-red-500" : pct > 50 ? "text-yellow-500" : "text-green-500";
 
   return (
-    <div className="flex items-center gap-1 px-2 py-1.5 rounded-full bg-muted text-xs font-semibold" title={`Storage ${usedMB}MB / ${totalMB}MB (${pct.toFixed(1)}%)`}>
+    <div className="flex items-center gap-1 shrink-0 whitespace-nowrap px-2 py-1.5 rounded-full bg-muted text-xs font-semibold" title={`Storage ${usedMB}MB / ${totalMB}MB (${pct.toFixed(1)}%)`}>
       <HardDrive className={`w-3.5 h-3.5 ${color}`} />
       <span className={color}>{usedMB}M</span>
     </div>
@@ -200,22 +200,29 @@ export function Navigation() {
 
   return (
     <>
+      {/*
+        메뉴가 8개(홈·활동 신청·카테고리 5개)에 관리자 버튼 4개까지 붙는다.
+        본문은 `max-w-7xl`(1280px)이지만 **헤더만 더 넓게** 쓴다. 그러지 않으면
+        노트북 폭에서 라벨이 단어 중간에 줄바꿈된다 ("과학실 소 / 개").
+        라벨에 `whitespace-nowrap` 을 걸어 두었으므로 폭이 모자라면 잘리는 대신
+        가로로 넘치고, 그 전에 `xl` 미만에서는 햄버거 메뉴로 넘어간다.
+      */}
       <header className="glass-nav">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-20">
+        <div className="max-w-[110rem] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center gap-4 h-20">
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-3 group">
+            <Link href="/" className="flex items-center gap-3 group shrink-0">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary to-primary/80 flex items-center justify-center text-white shadow-lg shadow-primary/20 group-hover:scale-105 transition-transform duration-300">
                 <Microscope className="w-6 h-6" />
               </div>
               <div className="flex flex-col">
-                <span className="text-xs font-bold text-primary tracking-wider">미사강변고등학교</span>
-                <span className="text-xl font-black text-foreground tracking-tight">과학중점고</span>
+                <span className="text-xs font-bold text-primary tracking-wider whitespace-nowrap">미사강변고등학교</span>
+                <span className="text-xl font-black text-foreground tracking-tight whitespace-nowrap">과학중점고</span>
               </div>
             </Link>
 
-            {/* Desktop Nav */}
-            <nav className="hidden lg:flex space-x-1">
+            {/* Desktop Nav — xl 미만에서는 햄버거로 넘긴다 (lg 에서는 라벨이 깨졌다) */}
+            <nav className="hidden xl:flex items-center gap-0.5">
               {NAV_ITEMS.map((item) => {
                 const isActive = location === item.path;
                 return (
@@ -223,7 +230,7 @@ export function Navigation() {
                     key={item.id}
                     href={item.path}
                     className={`
-                      relative px-4 py-2 rounded-full text-sm font-semibold transition-colors duration-200
+                      relative whitespace-nowrap px-3 py-2 rounded-full text-[13px] font-semibold transition-colors duration-200
                       ${isActive ? "text-primary bg-primary/5" : "text-muted-foreground hover:text-foreground hover:bg-black/5"}
                     `}
                   >
@@ -245,7 +252,9 @@ export function Navigation() {
             </nav>
 
             {/* Right side: Admin + Mobile Menu */}
-            <div className="flex items-center gap-2">
+            {/* 관리자로 들어오면 버튼이 넷 늘어난다. 이 영역이 줄어들면 안 되므로
+                shrink-0 을 걸고, 대신 메뉴 쪽이 좁아지지 않게 라벨을 nowrap 으로 뒀다. */}
+            <div className="flex items-center gap-1.5 shrink-0">
               {isAdmin ? (
                 <>
                   <StorageBadge />
@@ -254,7 +263,7 @@ export function Navigation() {
                   {(!user || user.role === "admin") && <InviteManager />}
                   {user && (
                     <span
-                      className="hidden sm:inline text-xs font-semibold text-muted-foreground px-2"
+                      className="hidden 2xl:inline text-xs font-semibold text-muted-foreground px-1 whitespace-nowrap"
                       title={user.role === "admin" ? "전체 관리자" : "교사"}
                     >
                       {user.name}
@@ -280,7 +289,7 @@ export function Navigation() {
 
               <button
                 onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="p-2 lg:hidden text-foreground hover:bg-black/5 rounded-full transition-colors"
+                className="p-2 xl:hidden text-foreground hover:bg-black/5 rounded-full transition-colors"
               >
                 {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
@@ -295,7 +304,7 @@ export function Navigation() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="lg:hidden border-t bg-white"
+              className="xl:hidden border-t bg-white"
             >
               <nav className="flex flex-col px-4 py-4 space-y-2">
                 {NAV_ITEMS.map((item) => {

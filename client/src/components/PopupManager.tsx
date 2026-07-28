@@ -305,7 +305,7 @@ export function PopupManager() {
     <>
       <button
         onClick={() => { setOpen(true); setView("list"); }}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-semibold text-muted-foreground bg-muted hover:bg-muted/80 transition-colors"
+        className="flex items-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-2 rounded-full text-xs font-semibold text-muted-foreground bg-muted hover:bg-muted/80 transition-colors"
         title="팝업 관리"
       >
         <Settings className="w-3.5 h-3.5" /> 팝업
