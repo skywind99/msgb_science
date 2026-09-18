@@ -80,8 +80,9 @@ jobs:
             echo "::warning::SUPABASE_URL / SUPABASE_ANON_KEY 시크릿이 없어 REST 핑을 건너뜁니다."
             exit 0
           fi
+          SB_URL="${SB_URL%/}"
           echo "Pinging Supabase..."
-          curl -f -s -o /dev/null "$SB_URL/rest/v1/posts?select=id&limit=1" \
+          curl -f -s --retry 3 --retry-delay 2 --retry-all-errors -o /dev/null "$SB_URL/rest/v1/posts?select=id&limit=1" \
             -H "apikey: $SB_KEY" \
             -H "Authorization: Bearer $SB_KEY"
           echo "Ping successful."
