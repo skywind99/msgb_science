@@ -29,6 +29,10 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          # 아래 keep-alive 커밋이 푸시에 밀렸을 때 rebase 로 다시 시도한다.
+          # 기본값(얕은 복제)에서는 rebase 가 불안정하므로 전체 이력을 받는다.
+          fetch-depth: 0
 
       # 시크릿이 없으면 조용히 지나가지 않고 눈에 띄게 남긴다.
       # 학생에게 고지한 30일 삭제가 동작하지 않는 상태이기 때문이다.
@@ -60,12 +64,32 @@ jobs:
       #
       # [skip ci] 를 붙이는 이유: 이 커밋 때문에 Vercel 이 2일마다 재배포하는 것은
       # 낭비다. Vercel 은 커밋 메시지에 이 표시가 있으면 빌드를 건너뛴다.
+      #
+      # 체크아웃과 푸시 사이에 사람이 먼저 푸시하면 `! [rejected] (fetch first)` 로
+      # 거절된다. 2026-07-28 실행이 실제로 여기서 죽었고, 그 바람에 **뒤의 Supabase
+      # 핑까지 통째로 건너뛰었다.** 프로젝트 일시정지를 막는 게 본래 목적인데
+      # 빈 커밋 하나 때문에 그게 날아간 셈이다. 그래서 두 가지를 건다.
+      #  - rebase 로 다시 시도한다 (빈 커밋이라 충돌할 것이 없다)
+      #  - continue-on-error 로 이 단계가 실패해도 핑까지는 반드시 간다
       - name: Git keep-alive commit
+        continue-on-error: true
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git commit --allow-empty -m "chore: keep-alive $(date +'%Y-%m-%d') [skip ci]"
-          git push
+
+          for attempt in 1 2 3; do
+            if git push; then
+              echo "keep-alive 커밋을 푸시했습니다 (시도 $attempt)."
+              exit 0
+            fi
+            echo "푸시가 거절되었습니다. 원격 변경을 가져와 다시 시도합니다 ($attempt/3)."
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+          done
+
+          echo "::warning::keep-alive 빈 커밋을 푸시하지 못했습니다."
+          echo "::warning::최근에 사람이 커밋했다면 그 활동만으로도 예약 워크플로는 유지됩니다."
+          exit 1
 
       # DB 를 한 번 더 깨운다. 위 정리 단계가 건너뛰어졌거나 실패했을 때의 대비책이다.
       #
