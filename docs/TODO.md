@@ -261,7 +261,8 @@ Groq·Gemini 두 개다. 키는 브라우저가 아니라 서버 DB 에 암호�
 - [x] `posts` 테이블 확장 — `shared/schema.ts` 적용 후 `npm run db:push`
   - `applyEnabled`, `eventStart`, `eventEnd`, `location`, `capacity`
   - `applyStart`, `applyDeadline`, `applyNote`, `applyPasswordHash`, `allowWaitlist`, `authorId`
-- [x] 교사용 활동 등록 폼 — `ActivityFields.tsx` 를 글쓰기·수정 양쪽에서 공용으로 쓴다
+- [x] 교사용 활동 등록 폼 — `ActivityFields.tsx`
+      (2026-10-02 부터 작성 화면은 `ActivityPanel` 을 쓴다. 수정 화면만 이것을 쓴다.)
 - [x] 게시물 상세에 활동 정보 표시 (일시·장소·정원·마감)
       → **남은 자리는 아직 없다.** 3단계의 `ApplicationSummary` 집계 API 가 있어야 한다.
 - [x] 홈 상단에 **신청 마감 임박 활동** 노출 (`UpcomingActivities.tsx`, 최대 3건)

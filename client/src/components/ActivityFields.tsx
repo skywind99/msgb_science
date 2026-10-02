@@ -2,9 +2,12 @@ import { CalendarClock, MapPin, Users, Lock, ClipboardList } from "lucide-react"
 import { type PublicPost } from "@shared/schema";
 
 /**
- * 활동 신청 정보 입력.
+ * 활동 신청 정보 입력 — **수정 화면(`PostDetail`)이 쓴다.**
  *
- * 글쓰기 화면과 수정 화면이 같은 필드를 쓰므로 한 곳에 모아 둔다.
+ * 작성 화면은 2026-10-02 부터 `ActivityPanel` 을 쓴다. 날짜 1개 + 시작/종료 시각으로
+ * 나눠 받는 쪽이다. 여기는 `datetime-local` 두 칸이라 여러 날 활동을 직접 고칠 수 있어
+ * 남겨 뒀다. 저장 형태(`ActivityDraft`)와 `activityToPayload` 는 양쪽이 공용이다.
+ *
  * "신청 받기" 를 끄면 지금까지와 똑같은 공지글이고, 켤 때만 아래가 펼쳐진다.
  * 교사가 새로 배울 게 없어야 하므로 필수는 활동 일시 하나뿐이다.
  */
