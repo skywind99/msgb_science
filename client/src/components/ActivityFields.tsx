@@ -121,7 +121,8 @@ function Field({
   );
 }
 
-function Toggle({
+/** 스위치 하나. `ActivityPanel` 도 같은 모양을 쓰므로 내보낸다. */
+export function Toggle({
   checked,
   onChange,
   label,

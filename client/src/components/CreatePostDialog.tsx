@@ -16,12 +16,13 @@ import {
 import { ImageInput } from "@/components/ImageInput";
 import { PostBlockEditor } from "@/components/PostBlockEditor";
 import { useAuthHeaders } from "@/contexts/admin";
+import { activityToPayload } from "@/components/ActivityFields";
 import {
-  ActivityFields,
-  activityToPayload,
-  emptyActivity,
-  type ActivityDraft,
-} from "@/components/ActivityFields";
+  ActivityPanel,
+  emptyActivityPanel,
+  panelToDraft,
+  type ActivityPanelDraft,
+} from "@/components/ActivityPanel";
 
 // 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
 // 활동 정보의 앞뒤 관계 검사는 저장 직전에 서버와 같은 스키마로 한 번 더 돌린다.
@@ -52,7 +53,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [blocks, setBlocks] = useState<EditorBlock[]>(() => [newEditorBlock("text")]);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
-  const [activity, setActivity] = useState<ActivityDraft>(emptyActivity);
+  const [activity, setActivity] = useState<ActivityPanelDraft>(emptyActivityPanel);
   const createPost = useCreatePost();
   const { toast } = useToast();
   const authHeaders = useAdminPw();
@@ -72,7 +73,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     form.reset({ category, title: "", content: "", imageUrl: "" });
     setBlocks([newEditorBlock("text")]);
     setThumbnailUrl("");
-    setActivity(emptyActivity);
+    setActivity(emptyActivityPanel);
   };
 
   const onSubmit = (data: FormValues) => {
@@ -84,7 +85,8 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
       imageUrl: thumbnailUrl || undefined,
       content: firstText(cleanedBlocks),
       blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
-      ...activityToPayload(activity, "create"),
+      // 날짜 1개 + 시각 둘을 일시로 합쳐서 기존 변환 함수에 그대로 넘긴다
+      ...activityToPayload(panelToDraft(activity), "create"),
     };
 
     // 활동 일시·마감의 앞뒤 관계를 서버와 같은 규칙으로 미리 확인한다.
@@ -138,7 +140,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="relative w-full max-w-5xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               {/* Header */}
               <div className="flex items-center justify-between p-6 border-b bg-muted/30 shrink-0">
@@ -156,52 +158,58 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
 
               {/* Body */}
               <div className="p-6 overflow-y-auto flex-1">
-                <form id="create-post-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                {/* 왼쪽은 글, 오른쪽은 활동 설정. 좁은 화면에서는 한 줄로 쌓인다. */}
+                <form
+                  id="create-post-form"
+                  onSubmit={form.handleSubmit(onSubmit)}
+                  className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"
+                >
                   <input type="hidden" {...form.register("category")} />
 
-                  {/* Title */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">제목</label>
-                    <input
-                      {...form.register("title")}
-                      placeholder="게시글 제목을 입력하세요"
-                      className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
-                    />
-                    {form.formState.errors.title && (
-                      <p className="text-sm text-destructive font-medium">{form.formState.errors.title.message}</p>
-                    )}
+                  <div className="lg:col-span-7 space-y-5 min-w-0">
+                    {/* Title */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground">제목</label>
+                      <input
+                        {...form.register("title")}
+                        placeholder="게시글 제목을 입력하세요"
+                        className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                      />
+                      {form.formState.errors.title && (
+                        <p className="text-sm text-destructive font-medium">{form.formState.errors.title.message}</p>
+                      )}
+                    </div>
+
+                    {/* 대표 이미지 — 카드로 묶는다. 3단계에서 이 카드 안에
+                        AI 상태 줄과 개인정보 안내가 들어온다. */}
+                    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">대표 이미지</div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          목록 썸네일입니다. 비워두면 본문 첫 이미지를 씁니다.
+                        </p>
+                      </div>
+                      <ImageInput
+                        value={thumbnailUrl}
+                        onChange={setThumbnailUrl}
+                        authHeaders={authHeaders}
+                        variant="compact"
+                        placeholder="https://example.com/thumbnail.jpg"
+                      />
+                    </div>
+
+                    {/* Blocks */}
+                    <div className="space-y-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <label className="text-sm font-semibold text-foreground">본문 블록</label>
+                        <span className="text-xs text-muted-foreground">총 {blocks.length}개</span>
+                      </div>
+                      <PostBlockEditor blocks={blocks} onChange={setBlocks} authHeaders={authHeaders} />
+                    </div>
                   </div>
 
-                  {/* Thumbnail */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">
-                      대표 이미지
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(목록 썸네일 — 비워두면 본문 첫 이미지 사용)</span>
-                    </label>
-                    <ImageInput
-                      value={thumbnailUrl}
-                      onChange={setThumbnailUrl}
-                      authHeaders={authHeaders}
-                      placeholder="https://example.com/thumbnail.jpg"
-                    />
-                  </div>
-
-                  {/* Blocks */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">
-                      본문 블록
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(이미지와 내용을 자유롭게 조합)</span>
-                    </label>
-                    <PostBlockEditor blocks={blocks} onChange={setBlocks} authHeaders={authHeaders} />
-                  </div>
-
-                  {/* 활동 신청 */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">
-                      활동 신청
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(일반 공지라면 그대로 두세요)</span>
-                    </label>
-                    <ActivityFields value={activity} onChange={setActivity} />
+                  <div className="lg:col-span-5 min-w-0">
+                    <ActivityPanel value={activity} onChange={setActivity} />
                   </div>
                 </form>
               </div>
