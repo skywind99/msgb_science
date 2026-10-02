@@ -494,3 +494,56 @@ export type AiProvider = (typeof AI_PROVIDERS)[number];
  *                  관리자가 키를 다시 등록하면 복구된다.
  */
 export type AiKeyState = "none" | "ok" | "unreadable";
+
+/** 교사 화면이 받는 것. "쓸 수 있는가" 뿐이다. */
+export type AiStatusResponse = Record<AiProvider, boolean>;
+
+/** admin 전용. 상태와 누가 언제 바꿨는지. **키 값은 들어 있지 않다.** */
+export type AiKeyAdminEntry = {
+  state: AiKeyState;
+  updatedBy: string | null;
+  updatedByName: string | null;
+  updatedAt: string | null;
+};
+export type AiKeysAdminResponse = {
+  /** 서버에 AI_KEY_SECRET 이 설정돼 있는가. 없으면 등록해도 암호화할 수 없다. */
+  secretConfigured: boolean;
+  providers: Record<AiProvider, AiKeyAdminEntry>;
+};
+
+/**
+ * 오류 분류. 교사 화면과 AI 설정 팝업의 문구를 나누기 위한 것이다.
+ *
+ * `key_unreadable` 은 `AI_KEY_SECRET` 이 바뀌거나 사라져 복호화가 안 되는 경우다.
+ * "등록하지 않음"과 "거부됨"과 또 다르므로 따로 둔다.
+ */
+export const AI_FILL_ERRORS = [
+  "key_missing",
+  "key_unreadable",
+  "key_rejected",
+  "rate_limited",
+  "model_gone",
+  "bad_response",
+  "image_rejected",
+] as const;
+export type AiFillErrorCode = (typeof AI_FILL_ERRORS)[number];
+
+/** 교사 화면에 그대로 보여주는 문구. */
+export const AI_FILL_MESSAGES: Record<AiFillErrorCode, string> = {
+  key_missing: "관리자가 AI를 설정하지 않았어요.",
+  key_unreadable: "AI 키를 읽을 수 없습니다. 관리자에게 알려 주세요.",
+  key_rejected: "AI 키가 거부됐어요. 관리자에게 알려 주세요.",
+  rate_limited: "AI 사용량이 한도를 넘었어요. 잠시 후 다시 시도해 주세요.",
+  model_gone: "AI 모델을 찾을 수 없어요. 관리자에게 알려 주세요.",
+  bad_response: "AI 응답을 이해할 수 없었어요. 다시 시도해 주세요.",
+  image_rejected: "이 이미지는 AI로 읽을 수 없어요. 먼저 서버에 저장해 주세요.",
+};
+
+/** AI 설정 팝업(admin)에 보여주는 문구. 손쓸 방법이 다르므로 따로 둔다. */
+export const AI_KEY_ADMIN_MESSAGES: Record<AiKeyState, string> = {
+  none: "키가 등록되지 않았습니다.",
+  ok: "사용할 수 있습니다.",
+  unreadable: "키를 다시 등록해야 합니다. (AI_KEY_SECRET 이 바뀌었을 수 있습니다)",
+};
+
+export type AiFillErrorResponse = { code: AiFillErrorCode; message: string };
