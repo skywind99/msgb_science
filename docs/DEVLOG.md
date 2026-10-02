@@ -10,6 +10,24 @@
 
 ---
 
+## 2026-07-28 — keep_alive 실패(90165000852) 원인 수정
+
+### 원인
+- `Ping Supabase REST` 단계에서 인증 헤더가 변수 참조가 아니라 고정 문자열로 들어가 있었다.
+- 또한 URL 끝 슬래시 상태에 따라 요청 URL이 흔들릴 수 있었고, 일시적인 DNS/네트워크 오류 재시도가 없었다.
+
+### 수정
+- `.github/workflows/supabase-keep-alive.yml`
+  - Authorization 헤더를 `Bearer $SB_KEY` 변수 참조 형태로 복구
+  - `SB_URL="${SB_URL%/}"`로 끝 슬래시 정규화
+  - `curl`에 `--retry 3 --retry-delay 2 --retry-all-errors` 추가
+
+### 기대 효과
+- keep_alive 잡이 잘못된 인증 헤더 때문에 즉시 실패하지 않는다.
+- 일시적 네트워크 오류에서 자동 재시도해 스케줄 잡 안정성이 올라간다.
+
+---
+
 ## 2026-07-28 — 하루 정리
 
 ### 배포한 것
