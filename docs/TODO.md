@@ -126,8 +126,32 @@ Groq·Gemini 두 개다. 키는 브라우저가 아니라 서버 DB 에 암호�
 - 개인정보 안내 문구는 공급자 약관 확인 후 사용자가 확정한다. **자리만 만들어 둘 것.**
 
 마이그레이션
-- 3단계에 설정 테이블 마이그레이션이 포함된다.
-  **방식을 먼저 제안하고 확인을 받은 뒤 진행한다.**
+- [x] `ai_settings` 테이블 적용 완료 (2026-10-02). `drizzle-kit push` 대신
+      `generate` 로 뽑은 DDL 3문장을 한 트랜잭션으로 실행했다.
+      컬럼 7개 · PK · FK 2개 · `CHECK (id = 1)` · RLS 켜짐·정책 0개 확인.
+      `anon`·`authenticated` 권한은 회수했다 (다른 테이블보다 엄격하다).
+
+### 실제 키로 확인해야 하는 것 (5단계 시작 전)
+
+`server/aiProviders.ts` 의 `callGroq` · `callGemini` 는 **아직 막혀 있다**
+(`NotVerifiedError`). 아래를 확인한 뒤 몸통을 채운다. 파일에도 `확인 전` 으로 적혀 있다.
+
+- [ ] **Gemini 의 JSON 스키마 강제 필드 이름.** 문서가 `/v1beta/interactions` 에
+      `response_format: {type, mime_type, schema}` 를 쓰는 형태를 보여주는데,
+      예전 `generateContent` + `generationConfig.responseSchema` 와 다르다.
+      실제 요청 한 번으로 확정한다.
+- [ ] **이미지를 공개 URL 로 넘기는 정확한 필드.** 문서는 URL 을 지원한다고 하지만
+      SDK 가 대신 내려받는 것인지 API 가 직접 가져가는 것인지가 불분명하다.
+      **API 가 직접 가져간다면 용량을 미리 막을 수 없으므로**, Storage 에 `HEAD` 를
+      먼저 보내 `content-length` 로 상한(`MAX_IMAGE_BYTES`, 5MB)을 건다.
+      안 되면 inline base64 로 폴백한다 (요청 전체 20MB 한도 안에서).
+- [ ] **기본 Flash 모델 확정.** 지금 상수는 `gemini-3.5-flash` 다. 비용·한도를 보고
+      정하고, `gemini-2.0-flash`(종료)·`gemini-2.5-flash`(접근 제한)는 쓰지 않는다.
+- [ ] **Groq 비전 모델이 아직 Preview 인지 재확인.** Preview 면 이미지 모드의
+      기본 공급자를 Gemini 로 두는 현재 설정을 유지한다 (`PROVIDER_ORDER`).
+- [ ] 한국어 포스터 3~4장으로 Groq·Gemini 결과 비교 → `PROVIDER_ORDER` 조정
+- [ ] 개인정보 안내 문구 확정 — `AiSettings.tsx` 아래쪽에 자리를 만들어 뒀다.
+      공급자 약관을 확인한 뒤 채운다.
 
 측정·확인이 필요한 것
 - [x] **함수 시간 결론 (2026-10-02 조사)** — `maxDuration` 상향이 아니라

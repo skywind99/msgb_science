@@ -9,6 +9,7 @@ import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
 import { InviteManager } from "@/components/InviteManager";
+import { AiSettings } from "@/components/AiSettings";
 
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
@@ -261,6 +262,9 @@ export function Navigation() {
                   <PopupManager />
                   {/* 초대 발급은 관리자만. 기존 관리자 비밀번호로 들어온 경우도 관리자다. */}
                   {(!user || user.role === "admin") && <InviteManager />}
+                  {/* AI 키도 관리자만. **초대와 같은 조건을 쓴다** — 둘이 갈라지면
+                      한쪽에서만 열리는 구멍이 생긴다. */}
+                  {(!user || user.role === "admin") && <AiSettings />}
                   {user && (
                     <span
                       className="hidden 2xl:inline text-xs font-semibold text-muted-foreground px-1 whitespace-nowrap"
