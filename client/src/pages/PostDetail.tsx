@@ -2,6 +2,7 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type PublicPost, type ContentBlock } from "@shared/schema";
 import { api } from "@shared/routes";
+import { splitLinks } from "@shared/linkify";
 import {
   firstText,
   renderBlock,
@@ -61,6 +62,38 @@ const CATEGORY_ROUTES: Record<string, string> = {
   student_program: "/student",
   local_community: "/community",
 };
+
+/**
+ * 글 안의 `http(s)://` 주소를 눌러 갈 수 있게 그린다.
+ *
+ * **`dangerouslySetInnerHTML` 을 쓰지 않는다.** 교사가 쓴 글이 그대로 HTML 이 되면
+ * `<script>` 한 줄로 끝난다. React 요소로 만들면 글자는 늘 글자로 남는다.
+ *
+ * 어디서 끊을지는 `shared/linkify.ts` 가 정한다 (`http`/`https` 만, 뒤따르는
+ * 문장 부호와 짝 없는 닫는 괄호는 떼어낸다). 줄바꿈은 바깥의
+ * `whitespace-pre-wrap` 이 그대로 살린다.
+ */
+function LinkedText({ text }: { text: string }) {
+  return (
+    <>
+      {splitLinks(text).map((part, i) =>
+        part.type === "link" ? (
+          <a
+            key={i}
+            href={part.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline underline-offset-2 break-all hover:opacity-80"
+          >
+            {part.value}
+          </a>
+        ) : (
+          part.value
+        )
+      )}
+    </>
+  );
+}
 
 export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
@@ -317,7 +350,7 @@ export default function PostDetail() {
                 )}
                 {textContent && (
                   <div className="prose prose-lg max-w-none text-foreground leading-relaxed whitespace-pre-wrap">
-                    {textContent}
+                    <LinkedText text={textContent} />
                   </div>
                 )}
               </div>
