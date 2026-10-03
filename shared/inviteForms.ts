@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { passwordSchema } from "./passwordRule.js";
 import { checkTeacherId, MAX_ID_LENGTH } from "./teacherId.js";
 
 /**
@@ -31,8 +32,9 @@ export const acceptInviteSchema = z
       .toLowerCase()
       .min(1, "아이디를 입력해 주세요.")
       .max(MAX_ID_LENGTH),
-    // Supabase Auth 는 bcrypt 를 쓴다. 72바이트를 넘으면 조용히 잘리므로 여기서 막는다.
-    password: z.string().min(8, "비밀번호는 8자 이상이어야 합니다.").max(72),
+    // 가입·변경·관리자 재설정이 **같은 규칙**을 쓴다. 갈라지면 가입은 막는데
+    // 변경은 통과하는 식이 되고, 안내 문구도 서로 달라진다.
+    password: passwordSchema,
     name: z.string().trim().min(2, "이름을 입력해 주세요.").max(20),
   })
   // 클라이언트도 같은 함수로 검사한다. 규칙이 갈라지면 화면은 통과인데 서버가 400 을 준다.

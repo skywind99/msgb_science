@@ -1,5 +1,5 @@
 import { Link, useLocation } from "wouter";
-import { Microscope, Menu, X, Lock, LogOut, ShieldCheck, HardDrive } from "lucide-react";
+import { Microscope, Menu, X, Lock, LogOut, ShieldCheck, HardDrive, KeyRound } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
 import { InviteManager } from "@/components/InviteManager";
 import { AiSettings } from "@/components/AiSettings";
+import { PasswordChange } from "@/components/PasswordChange";
 
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
@@ -197,6 +198,8 @@ export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { isAdmin, logout, user } = useAdmin();
+  /** 비밀번호 변경 창. 이름 배지를 눌러 연다. */
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
   const openCount = useOpenActivityCount();
 
   return (
@@ -265,13 +268,19 @@ export function Navigation() {
                   {/* AI 키도 관리자만. **초대와 같은 조건을 쓴다** — 둘이 갈라지면
                       한쪽에서만 열리는 구멍이 생긴다. */}
                   {(!user || user.role === "admin") && <AiSettings />}
+                  {/* 이름 배지를 누르면 비밀번호를 바꿀 수 있다.
+                      메일 재설정이 없는 구조라(`shared/teacherId.ts`) 교사가
+                      스스로 바꿀 수 있는 자리는 여기 하나뿐이다.
+                      좁은 화면에서는 배지가 숨으므로 아래 모바일 메뉴에도 둔다. */}
                   {user && (
-                    <span
-                      className="hidden 2xl:inline text-xs font-semibold text-muted-foreground px-1 whitespace-nowrap"
-                      title={user.role === "admin" ? "전체 관리자" : "교사"}
+                    <button
+                      onClick={() => setShowPasswordChange(true)}
+                      className="hidden 2xl:inline-flex items-center gap-1 text-xs font-semibold text-muted-foreground px-2 py-1 rounded-lg hover:bg-black/5 hover:text-foreground whitespace-nowrap transition-colors"
+                      title={`${user.role === "admin" ? "전체 관리자" : "교사"} · 비밀번호 변경`}
                     >
+                      <KeyRound className="w-3 h-3" />
                       {user.name}
-                    </span>
+                    </button>
                   )}
                   <button
                     onClick={logout}
@@ -330,6 +339,22 @@ export function Navigation() {
                     </Link>
                   );
                 })}
+
+                {/* 좁은 화면에서는 위의 이름 배지가 숨는다. 여기에도 두지 않으면
+                    태블릿으로 들어온 교사는 비밀번호를 바꿀 길이 없다. */}
+                {user && (
+                  <button
+                    onClick={() => {
+                      setIsMobileMenuOpen(false);
+                      setShowPasswordChange(true);
+                    }}
+                    className="flex items-center gap-2 px-4 py-3 rounded-xl text-base font-semibold text-muted-foreground hover:bg-black/5 transition-colors text-left"
+                  >
+                    <KeyRound className="w-4 h-4" />
+                    비밀번호 변경
+                    <span className="text-xs font-normal">({user.name})</span>
+                  </button>
+                )}
               </nav>
             </motion.div>
           )}
@@ -339,6 +364,10 @@ export function Navigation() {
       <AnimatePresence>
         {showLoginModal && <AdminLoginModal onClose={() => setShowLoginModal(false)} />}
       </AnimatePresence>
+
+      {/* 비밀번호 변경 — 컴포넌트가 스스로 `createPortal` 로 body 에 붙는다.
+          여기서 `AnimatePresence` 로 감싸면 포털이 그 안에 들어가 버린다. */}
+      <PasswordChange open={showPasswordChange} onClose={() => setShowPasswordChange(false)} />
     </>
   );
 }
