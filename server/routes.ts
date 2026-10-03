@@ -21,7 +21,9 @@ import { buildCalendar, contentDisposition, eventToGoogleUrl } from "./calendar.
 import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
-import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
+import { ensureAuth, requireAdmin, resolveUser, type AuthedRequest, type AuthUser } from "./auth.js";
+import { canManagePost, manageOutcome } from "../shared/postPermissions.js";
+import { popupPointsToPost } from "../shared/postLink.js";
 import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
 import {
@@ -286,11 +288,42 @@ async function loadOwnedActivity(
   const post = await loadActivity(req, res);
   if (!post) return null;
 
-  if (user.role !== "admin" && post.authorId !== user.id) {
+  if (!canManagePost(user, post)) {
     res.status(403).json({ message: "이 활동의 명단을 볼 권한이 없습니다." });
     return null;
   }
   return { post, user };
+}
+
+/**
+ * 게시물을 관리할 권한이 있는지 확인하고 글을 돌려준다. **삭제가 쓴다.**
+ *
+ * `loadOwnedActivity` 를 쓸 수 없다. 그 안의 `loadActivity` 가 신청을 받지 않는
+ * 글을 **400 "신청을 받지 않는 게시물입니다"** 로 끊는다. 공지 글을 지우려는
+ * 교사가 그 문구를 받으면 왜 안 지워지는지 알 수 없다.
+ *
+ * **404 를 403 보다 먼저 본다.** 없는 글에 403 을 주면 "권한이 없다" 가 곧
+ * "그 글은 있다" 는 뜻이 된다. 게시물 제목은 어차피 공개라 숨길 것이 없고,
+ * 교사에게는 "없는 글" 과 "내 글이 아닌 글" 이 구분돼야 한다.
+ * (명단 경로는 반대로 권한을 먼저 본다 — 거기는 학생 개인정보가 걸려 있다.)
+ */
+async function loadPostForManage(
+  req: Request,
+  res: Response
+): Promise<{ post: Post; user: AuthUser } | null> {
+  const user = await ensureAuth(req, res);
+  if (!user) return null; // 401 은 ensureAuth 가 이미 보냈다
+
+  const id = parseInt(String(req.params.id));
+  // 숫자가 아니면 조회할 것도 없다. `manageOutcome` 과 같은 404 를 준다.
+  const post = isNaN(id) ? null : ((await storage.getPost(id)) ?? null);
+
+  const outcome = manageOutcome(user, post);
+  if (outcome.status !== 200) {
+    res.status(outcome.status).json({ message: outcome.message });
+    return null;
+  }
+  return { post: post!, user };
 }
 
 /** 신청 한 건에 대한 권한 확인. 상태 변경·삭제가 같이 쓴다. */
@@ -312,7 +345,7 @@ async function loadOwnedApplication(
     res.status(404).json({ message: "신청을 찾을 수 없습니다." });
     return null;
   }
-  if (user.role !== "admin" && found.post.authorId !== user.id) {
+  if (!canManagePost(user, found.post)) {
     res.status(403).json({ message: "이 활동의 명단을 관리할 권한이 없습니다." });
     return null;
   }
@@ -387,11 +420,29 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // 게시물 응답은 반드시 toPublicPost 를 거친다. applyPasswordHash 를 밖으로 내보내지 않는다.
+  /**
+   * 로그인한 요청에만 `canDelete` 를 붙인다.
+   *
+   * `ensureAuth` 가 아니라 `resolveUser` 를 쓴다 — 목록은 공개 경로이고,
+   * 토큰이 없거나 틀렸으면 **401 을 내지 않고 그냥 비로그인으로 본다.**
+   *
+   * 응답이 사용자마다 달라지므로 **캐시를 막아야 한다.** 막지 않으면 공용 캐시나
+   * 브라우저 캐시가 로그인한 사람의 본문을 비로그인에게 줄 수 있다.
+   */
+  async function withCanDelete(req: Request, res: Response, posts: Post[]) {
+    const user = await resolveUser(req);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Authorization");
+    if (!user) return posts.map(toPublicPost);
+    return posts.map((p) => ({ ...toPublicPost(p), canDelete: canManagePost(user, p) }));
+  }
+
+  // 게시물 응답은 반드시 toPublicPost 를 거친다.
+  // applyPasswordHash 와 authorId 를 밖으로 내보내지 않는다.
   app.get(api.posts.list.path, async (req, res) => {
     const category = req.query.category as string | undefined;
     const postsList = await storage.getPosts(category);
-    res.json(postsList.map(toPublicPost));
+    res.json(await withCanDelete(req, res, postsList));
   });
 
   app.get(api.posts.get.path, async (req, res) => {
@@ -399,7 +450,8 @@ export async function registerRoutes(
     if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
     const post = await storage.getPost(id);
     if (!post) return res.status(404).json({ message: "Post not found" });
-    res.json(toPublicPost(post));
+    const [one] = await withCanDelete(req, res, [post]);
+    res.json(one);
   });
 
   // ── 사이언스타임즈 최신 기사 목록 ────────────────────────
@@ -546,23 +598,32 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * 삭제는 **작성자와 `admin` 만.** 수정(PATCH)은 로그인한 교사 모두에게 열어 둔다 —
+   * 오타를 고치는 일은 서로 도와야 하지만, 지우는 것은 되돌릴 수 없다.
+   */
   app.delete(api.posts.delete.path, async (req, res) => {
-    if (!(await ensureAuth(req, res))) return;
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
+    const owned = await loadPostForManage(req, res);
+    if (!owned) return;
+    const id = owned.post.id;
     const success = await storage.deletePost(id);
     if (!success) return res.status(404).json({ message: "Post not found" });
 
-    // 이 게시물 링크를 가진 팝업 자동 삭제
+    // 이 게시물을 가리키는 팝업도 같이 지운다.
+    //
+    // **`includes` 로 비교하지 않는다.** 예전에는 `linkUrl.includes("/posts/1")`
+    // 이어서, 1번 글을 지우면 `/posts/12`·`/posts/123` 을 가리키던 팝업까지
+    // 사라졌다. 번호를 정확히 뽑아 같은 번호일 때만 지운다.
     try {
-      const postUrl = `/posts/${id}`;
       const allPopups = await storage.getPopups();
       for (const popup of allPopups) {
-        if (popup.linkUrl?.includes(postUrl)) {
+        if (popupPointsToPost(popup.linkUrl, id)) {
           await storage.deletePopup(popup.id);
         }
       }
     } catch (err) {
+      // 팝업 정리가 실패해도 게시물 삭제는 되돌리지 않는다. 남은 팝업은
+      // 죽은 링크가 되지만, 글이 지워진 채 응답이 500 이 되는 것보다 낫다.
       console.error("popup auto-delete error:", err);
     }
 

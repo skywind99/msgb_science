@@ -99,8 +99,11 @@ export default function PostDetail() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
-  const { isAdmin } = useAdmin();
+  // `isAdmin` 은 "로그인됨" 이다. 삭제 권한은 서버가 내려주는 `post.canDelete` 로 본다.
+  const { isAdmin, user } = useAdmin();
   const authHeaders = useAuthHeaders();
+  /** 로그인 신원. 캐시 키에 넣어야 `canDelete` 가 로그인 전 값으로 굳지 않는다. */
+  const authKey = user?.id ?? "anon";
 
   const [editOpen, setEditOpen] = useState(false);
   const [popupRegistering, setPopupRegistering] = useState(false);
@@ -111,9 +114,11 @@ export default function PostDetail() {
   const [editActivity, setEditActivity] = useState<ActivityDraft>(emptyActivity);
 
   const { data: post, isLoading } = useQuery<PublicPost>({
-    queryKey: ["/api/posts", id],
+    queryKey: ["/api/posts", id, authKey],
     queryFn: async () => {
-      const res = await fetch(`/api/posts/${id}`);
+      // 토큰을 보내야 서버가 `canDelete` 를 계산한다. 예전에는 헤더 없이 불러서
+      // 로그인해도 삭제 권한을 알 수 없었다.
+      const res = await fetch(`/api/posts/${id}`, { headers: authHeaders });
       if (!res.ok) throw new Error("Post not found");
       return res.json();
     },
@@ -288,12 +293,16 @@ export default function PostDetail() {
                   <DropdownMenuItem onClick={registerAsPopup} disabled={popupRegistering}>
                     <Bell className="w-4 h-4 mr-2" /> {popupRegistering ? "등록 중..." : "팝업으로 등록"}
                   </DropdownMenuItem>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" /> 삭제
-                  </DropdownMenuItem>
+                  {/* 삭제만 권한이 갈린다. 서버가 계산해 내려준 값으로 판단한다 —
+                      화면이 authorId 와 비교하지 않는다(공개 응답에 없다). */}
+                  {post.canDelete && (
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setDeleteOpen(true)}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" /> 삭제
+                    </DropdownMenuItem>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}

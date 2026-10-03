@@ -235,12 +235,29 @@ export type NewPost = InsertPost & {
  * 해시가 유출되면 오프라인 대입으로 뚫린다.
  * 폼에서 필요한 것은 "설정 여부"뿐이므로 불리언만 내려보낸다.
  */
-export type PublicPost = Omit<Post, "applyPasswordHash"> & {
+export type PublicPost = Omit<Post, "applyPasswordHash" | "authorId"> & {
   hasApplyPassword: boolean;
+  /**
+   * 이 글을 지울 수 있는가. **로그인한 요청에만 붙는다.**
+   *
+   * 비로그인 응답에는 키 자체가 없다(`false` 도 넣지 않는다). 화면은
+   * `undefined` 를 falsy 로 받아 저절로 숨긴다.
+   *
+   * 화면이 `authorId` 와 직접 비교하지 않게 하려고 서버가 계산해서 내려준다.
+   * `authorId` 는 교사의 Supabase 계정 UUID 라서 공개 응답에 나가면 안 된다.
+   */
+  canDelete?: boolean;
 };
 
+/**
+ * 공개 응답으로 바꾼다. **빼는 것이 둘이다.**
+ *
+ * - `applyPasswordHash` — 해시가 유출되면 오프라인 대입으로 뚫린다
+ * - `authorId` — 교사의 Supabase 계정 UUID. 지금까지 `GET /api/posts` 로
+ *   **누구에게나** 나가고 있었다. 글 목록을 받으면 교사 계정 식별자가 따라왔다
+ */
 export function toPublicPost(post: Post): PublicPost {
-  const { applyPasswordHash, ...rest } = post;
+  const { applyPasswordHash, authorId, ...rest } = post;
   return { ...rest, hasApplyPassword: !!applyPasswordHash };
 }
 

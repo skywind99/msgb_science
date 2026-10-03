@@ -11,7 +11,10 @@ export interface AuthUser {
 }
 
 interface AdminContextType {
-  /** 관리자 기능 노출 여부. 로그인한 교사·관리자면 true. */
+  /**
+   * 관리자 기능 노출 여부. **로그인한 교사·관리자면 true — 역할 구분이 아니다.**
+   * 권한이 갈리는 기능은 서버가 내려주는 값으로 판단한다 (`post.canDelete`).
+   */
   isAdmin: boolean;
   /** 로그인한 사용자. 비로그인이면 null. */
   user: AuthUser | null;
@@ -135,6 +138,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem("admin_pw");
   };
 
+  /**
+   * **"로그인됨" 이다. `admin` 역할이 아니다.**
+   *
+   * 이름이 역할처럼 읽히지만 `teacher` 도 true 가 된다. 실제 역할은 `user.role`
+   * 에만 있다. 쓰는 곳이 여러 군데라 이름은 그대로 두고 여기에 적어 둔다.
+   *
+   * **권한을 이걸로 판단하지 말 것.** 게시물 삭제처럼 사람마다 달라지는 것은
+   * 서버가 계산해 내려주는 값(`post.canDelete`)을 쓴다.
+   */
   const isAdmin = !!user;
 
   return (
