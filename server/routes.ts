@@ -22,6 +22,7 @@ import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
+import { canManagePost, DELETE_FORBIDDEN_MESSAGE } from "../shared/postPermissions.js";
 import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
 import {
@@ -286,8 +287,46 @@ async function loadOwnedActivity(
   const post = await loadActivity(req, res);
   if (!post) return null;
 
-  if (user.role !== "admin" && post.authorId !== user.id) {
+  if (!canManagePost(user, post)) {
     res.status(403).json({ message: "이 활동의 명단을 볼 권한이 없습니다." });
+    return null;
+  }
+  return { post, user };
+}
+
+/**
+ * 게시물을 관리할 권한이 있는지 확인하고 글을 돌려준다. **삭제가 쓴다.**
+ *
+ * `loadOwnedActivity` 를 쓸 수 없다. 그 안의 `loadActivity` 가 신청을 받지 않는
+ * 글을 **400 "신청을 받지 않는 게시물입니다"** 로 끊는다. 공지 글을 지우려는
+ * 교사가 그 문구를 받으면 왜 안 지워지는지 알 수 없다.
+ *
+ * **404 를 403 보다 먼저 본다.** 없는 글에 403 을 주면 "권한이 없다" 가 곧
+ * "그 글은 있다" 는 뜻이 된다. 게시물 제목은 어차피 공개라 숨길 것이 없고,
+ * 교사에게는 "없는 글" 과 "내 글이 아닌 글" 이 구분돼야 한다.
+ * (명단 경로는 반대로 권한을 먼저 본다 — 거기는 학생 개인정보가 걸려 있다.)
+ */
+async function loadPostForManage(
+  req: Request,
+  res: Response
+): Promise<{ post: Post; user: AuthUser } | null> {
+  const user = await ensureAuth(req, res);
+  if (!user) return null;
+
+  const id = parseInt(String(req.params.id));
+  if (isNaN(id)) {
+    res.status(404).json({ message: "Invalid ID" });
+    return null;
+  }
+
+  const post = await storage.getPost(id);
+  if (!post) {
+    res.status(404).json({ message: "Post not found" });
+    return null;
+  }
+
+  if (!canManagePost(user, post)) {
+    res.status(403).json({ message: DELETE_FORBIDDEN_MESSAGE });
     return null;
   }
   return { post, user };
@@ -312,7 +351,7 @@ async function loadOwnedApplication(
     res.status(404).json({ message: "신청을 찾을 수 없습니다." });
     return null;
   }
-  if (user.role !== "admin" && found.post.authorId !== user.id) {
+  if (!canManagePost(user, found.post)) {
     res.status(403).json({ message: "이 활동의 명단을 관리할 권한이 없습니다." });
     return null;
   }
@@ -546,10 +585,14 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * 삭제는 **작성자와 `admin` 만.** 수정(PATCH)은 로그인한 교사 모두에게 열어 둔다 —
+   * 오타를 고치는 일은 서로 도와야 하지만, 지우는 것은 되돌릴 수 없다.
+   */
   app.delete(api.posts.delete.path, async (req, res) => {
-    if (!(await ensureAuth(req, res))) return;
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
+    const owned = await loadPostForManage(req, res);
+    if (!owned) return;
+    const id = owned.post.id;
     const success = await storage.deletePost(id);
     if (!success) return res.status(404).json({ message: "Post not found" });
 

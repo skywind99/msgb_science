@@ -77,6 +77,8 @@ export const api = {
       path: "/api/posts/:id" as const,
       responses: {
         204: z.void(),
+        // 작성자도 admin 도 아니면 403. 수정(PATCH)에는 이 검사가 없다.
+        403: errorSchemas.notFound,
         404: errorSchemas.notFound,
       },
     },
