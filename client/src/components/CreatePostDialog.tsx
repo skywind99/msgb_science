@@ -84,6 +84,10 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   /** 카드 상태 줄. 성공 문구와 AI_FILL_MESSAGES 오류가 같은 자리에 온다. */
   const [aiStatusLine, setAiStatusLine] =
     useState<{ kind: "ok" | "error"; message: string } | null>(null);
+
+  /** 등록을 눌렀을 때 막힌 활동 칸. 고치면 지운다. */
+  const [activityErrors, setActivityErrors] =
+    useState<Partial<Record<"date" | "startTime", string>>>({});
   const createPost = useCreatePost();
   const { toast } = useToast();
   const authHeaders = useAdminPw();
@@ -109,6 +113,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setAiBody(null);
     setAiBusy(null);
     setAiStatusLine(null);
+    setActivityErrors({});
   };
 
   /**
@@ -219,13 +224,34 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     // 활동 일시·마감의 앞뒤 관계를 서버와 같은 규칙으로 미리 확인한다.
     const checked = api.posts.create.input.safeParse(payload);
     if (!checked.success) {
+      /**
+       * 서버 문구는 "활동 일시를 입력해야 합니다" 하나뿐이라 **어느 칸이 문제인지
+       * 가리키지 못한다.** 날짜는 채웠는데 시각만 빈 경우가 흔해서, 그때는
+       * 칸을 짚어 준다.
+       */
+      const needsStartTime = activity.applyEnabled && !!activity.date && !activity.startTime;
+      const needsDate = activity.applyEnabled && !activity.date;
+
+      setActivityErrors(
+        needsStartTime
+          ? { startTime: "시작 시각을 입력해 주세요." }
+          : needsDate
+            ? { date: "활동 날짜를 입력해 주세요." }
+            : {}
+      );
+
       toast({
         title: "입력을 확인해 주세요.",
-        description: checked.error.errors[0].message,
+        description: needsStartTime
+          ? "시작 시각을 입력해 주세요."
+          : needsDate
+            ? "활동 날짜를 입력해 주세요."
+            : checked.error.errors[0].message,
         variant: "destructive",
       });
       return;
     }
+    setActivityErrors({});
 
     createPost.mutate(
       checked.data,
@@ -366,9 +392,14 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                           changed.forEach((k) => rest.delete(k as AiFilledField));
                           setAiFilled(rest);
                         }
+                        // 고친 칸의 오류 표시는 바로 내린다.
+                        if (next.date !== activity.date || next.startTime !== activity.startTime) {
+                          setActivityErrors({});
+                        }
                         setActivity(next);
                       }}
                       aiFilled={aiFilled}
+                      fieldErrors={activityErrors}
                     />
                     </div>
                   </div>

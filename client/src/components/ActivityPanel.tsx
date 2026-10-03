@@ -321,6 +321,7 @@ export function ActivityPanel({
   value,
   onChange,
   aiFilled,
+  fieldErrors,
 }: {
   value: ActivityPanelDraft;
   onChange: (next: ActivityPanelDraft) => void;
@@ -331,6 +332,13 @@ export function ActivityPanel({
    * 하나뿐이다. 이 패널은 결과를 보여주고 고치는 곳이다.
    */
   aiFilled?: ReadonlySet<AiFilledField>;
+  /**
+   * 등록을 눌렀을 때 막힌 칸. 요약 상자의 안내와는 별개다.
+   *
+   * 요약 안내는 "채우는 게 좋다" 는 귀띔이고, 이건 "이것 때문에 저장이 안 됐다" 는
+   * 결과다. 둘을 한 자리에 합치면 왜 막혔는지 알 수 없다.
+   */
+  fieldErrors?: Partial<Record<"date" | "startTime", string>>;
 }) {
   // 마감 칩을 누를 수 없을 때 보여주는 안내. 입력하면 사라진다.
   const [chipError, setChipError] = useState(false);
@@ -391,7 +399,10 @@ export function ActivityPanel({
             />
             {/* 저장을 막지는 않는다. 지난 행사를 기록으로 올리는 경우가 있다.
                 다만 AI 가 연도를 잘못 집었을 때 눈에 띄어야 한다. */}
-            {isPastDate && (
+            {fieldErrors?.date && (
+              <p className="text-xs text-destructive font-medium">{fieldErrors.date}</p>
+            )}
+            {isPastDate && !fieldErrors?.date && (
               <p className="text-xs text-amber-700 font-medium">
                 이미 지난 날짜예요. 연도를 확인해 주세요.
               </p>
@@ -404,8 +415,16 @@ export function ActivityPanel({
                 type="time"
                 value={value.startTime}
                 onChange={(e) => set("startTime", e.target.value)}
-                className={cls("startTime")}
+                aria-invalid={!!fieldErrors?.startTime}
+                className={
+                  fieldErrors?.startTime
+                    ? `${cls("startTime")} border-destructive focus:border-destructive`
+                    : cls("startTime")
+                }
               />
+              {fieldErrors?.startTime && (
+                <p className="text-xs text-destructive font-medium">{fieldErrors.startTime}</p>
+              )}
             </Field>
             <Field label="종료" hint="(선택)">
               <input
