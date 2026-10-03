@@ -319,9 +319,12 @@ export function ActivityPanel({
             )}
           </div>
 
+          {/* 글에도 학생 이름이 들어갈 수 있다. 이미지 쪽과 같은 경고를 둔다. */}
           {onAiFill && (
             <p className="text-xs text-muted-foreground">
-              본문 글상자의 <strong>글자만</strong> AI로 보냅니다. 이미지는 보내지 않아요.
+              본문 글상자의 <strong>글자만</strong> AI 서비스(Google Gemini, 장애 시 Groq)로
+              보냅니다. 이미지는 보내지 않아요. 무료 이용 중에는 입력한 내용이 공급자의 서비스
+              개선에 쓰일 수 있으니, 학생의 이름이나 개인정보가 담긴 글은 보내지 마세요.
             </p>
           )}
 

@@ -308,8 +308,10 @@ export function AiSettings() {
                     })}
 
                   {/*
-                    개인정보 안내 — **문구는 공급자 약관을 확인한 뒤 확정한다.**
-                    자리만 만들어 두었다. 확정 전까지는 보수적으로 적어 둔다.
+                    개인정보 안내. 문구는 2026-10-03 에 확정했다.
+                    **공급자 이름과 폴백 순서를 밝히므로 `PROVIDER_ORDER` 와 짝이다** —
+                    한쪽을 바꾸면 여기도 같이 고쳐야 한다.
+                    같은 내용이 교사 화면 두 곳(대표 이미지 카드, "AI 입력" 아래)에도 있다.
                   */}
                   <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-1.5">
                     <div className="text-xs font-bold text-foreground">쓰기 전에 알아 두실 것</div>
@@ -317,11 +319,14 @@ export function AiSettings() {
                       <li>• 키는 서버에 암호화되어 저장됩니다. 저장 후에는 다시 볼 수 없습니다.</li>
                       <li>• AI는 선생님이 버튼을 누를 때만 쓰입니다. 이미지를 올리는 것만으로는 분석하지 않습니다.</li>
                       <li>
-                        • 무료 등급 키는 보낸 내용이 공급자의 제품 개선에 쓰일 수 있습니다.
-                        <strong> 학생 이름이나 얼굴이 담긴 사진은 보내지 마세요.</strong>
+                        • 보내는 곳은 Google Gemini이고, 장애가 나면 Groq으로 넘어갑니다.
                       </li>
-                      <li className="text-muted-foreground/70">
-                        (공급자 약관 확인 후 이 안내를 확정할 예정입니다.)
+                      <li>
+                        • 무료 이용 중에는 입력한 내용이 공급자의 서비스 개선에 쓰일 수 있습니다.
+                        <strong>
+                          {" "}
+                          학생의 이름·얼굴이 나온 사진이나 개인정보가 담긴 글은 보내지 마세요.
+                        </strong>
                       </li>
                     </ul>
                   </div>

@@ -324,9 +324,10 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                         <p className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
                           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                           <span>
-                            올리기만 해서는 분석하지 않아요. <strong>"AI로 읽기"를 누를 때만</strong>{" "}
-                            이 이미지가 AI로 전송됩니다. 학생이 나온 사진에는 누르지 마세요.
-                            {/* TODO: 공급자 약관 확인 후 문구 확정 (docs/TODO.md) */}
+                            <strong>"AI로 읽기"를 누르면</strong> 이 이미지가 AI 서비스(Google
+                            Gemini, 장애 시 Groq)로 전송됩니다. 무료 이용 중에는 입력한 내용이
+                            공급자의 서비스 개선에 쓰일 수 있습니다. 학생의 이름·얼굴이 나온
+                            사진이나 개인정보가 담긴 글은 보내지 마세요.
                           </span>
                         </p>
                       )}
