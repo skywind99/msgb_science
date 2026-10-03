@@ -12,21 +12,32 @@ import type { AiFillErrorCode, AiProvider } from "../shared/schema.js";
  */
 
 // ── 모델명 ────────────────────────────────────────────────
-// 2026-10-02 공식 문서에서 확인한 값이다. 바꿀 때도 문서를 먼저 볼 것.
+// **문서가 아니라 계정의 실제 목록을 기준으로 한다.**
+// 2026-10-03 에 `GET /openai/v1/models` 로 확인했다. 문서의 Production 목록에
+// 있던 `llama-3.3-70b-versatile` 는 이 계정에서 404 였다 — 문서만 믿으면 안 된다.
+// 바꿀 때는 목록을 다시 찍어 보고, 합성 안내문으로 채점까지 할 것.
 //
-// Groq: 비전 모델이 **Preview 목록에만** 있다 (Production 에는 없다).
-//   그래서 이미지 모드의 기본 공급자를 Gemini 로 둔다 — 프리뷰 모델이
-//   내려가는 날 기본 경로가 끊기면 안 된다.
-// Gemini: `gemini-2.0-flash` 는 종료됐고 `gemini-2.5-flash` 는 접근 제한이다.
-//   안정판 중에서 고른다.
+// Groq 선택 근거 (같은 합성 안내문, 8개 항목 채점)
+//   openai/gpt-oss-120b  8/8  1800ms  ← 텍스트 기본. Production 이라 오래 간다
+//   qwen/qwen3.8-27b     8/8   636ms     가장 빠르고 정확하지만 **Preview**
+//   openai/gpt-oss-20b   7/8  1349ms     제목을 비웠다
+// 텍스트는 같은 점수를 받은 Production 쪽을 쓴다. 둘 다 예산(8초) 안이라
+// 속도를 위해 Preview 를 기본으로 둘 이유가 없다.
+//
+// Groq 의 **비전 모델은 `qwen/qwen3.8-27b` 하나뿐이고 Preview** 다
+// (모델 목록 API 는 Preview 여부를 알려주지 않는다. 문서 쪽 표시를 따랐다).
+// 그래서 이미지 모드의 기본 공급자는 Gemini 다 — 프리뷰 모델이 내려가는 날
+// 기본 경로가 끊기면 안 된다.
 export const MODELS = {
   groq: {
-    text: "llama-3.3-70b-versatile", // Production
+    text: "openai/gpt-oss-120b", // Production, ctx 131k
     vision: "qwen/qwen3.8-27b", // Preview — 내려갈 수 있다
   },
   gemini: {
+    // 확인 전 — Gemini 키가 등록되면 모델 목록을 찍어 안정판으로 확정한다.
+    // `gemini-2.0-flash` 는 종료, `gemini-2.5-flash` 는 접근 제한이다.
     text: "gemini-3.5-flash",
-    vision: "gemini-3.5-flash", // 같은 모델이 이미지 입력을 받는다
+    vision: "gemini-3.5-flash",
   },
 } as const;
 
