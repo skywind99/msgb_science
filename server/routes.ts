@@ -21,7 +21,7 @@ import { buildCalendar, contentDisposition, eventToGoogleUrl } from "./calendar.
 import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
-import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
+import { ensureAuth, requireAdmin, resolveUser, type AuthedRequest, type AuthUser } from "./auth.js";
 import { canManagePost, DELETE_FORBIDDEN_MESSAGE } from "../shared/postPermissions.js";
 import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
@@ -426,11 +426,29 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
-  // 게시물 응답은 반드시 toPublicPost 를 거친다. applyPasswordHash 를 밖으로 내보내지 않는다.
+  /**
+   * 로그인한 요청에만 `canDelete` 를 붙인다.
+   *
+   * `ensureAuth` 가 아니라 `resolveUser` 를 쓴다 — 목록은 공개 경로이고,
+   * 토큰이 없거나 틀렸으면 **401 을 내지 않고 그냥 비로그인으로 본다.**
+   *
+   * 응답이 사용자마다 달라지므로 **캐시를 막아야 한다.** 막지 않으면 공용 캐시나
+   * 브라우저 캐시가 로그인한 사람의 본문을 비로그인에게 줄 수 있다.
+   */
+  async function withCanDelete(req: Request, res: Response, posts: Post[]) {
+    const user = await resolveUser(req);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Authorization");
+    if (!user) return posts.map(toPublicPost);
+    return posts.map((p) => ({ ...toPublicPost(p), canDelete: canManagePost(user, p) }));
+  }
+
+  // 게시물 응답은 반드시 toPublicPost 를 거친다.
+  // applyPasswordHash 와 authorId 를 밖으로 내보내지 않는다.
   app.get(api.posts.list.path, async (req, res) => {
     const category = req.query.category as string | undefined;
     const postsList = await storage.getPosts(category);
-    res.json(postsList.map(toPublicPost));
+    res.json(await withCanDelete(req, res, postsList));
   });
 
   app.get(api.posts.get.path, async (req, res) => {
@@ -438,7 +456,8 @@ export async function registerRoutes(
     if (isNaN(id)) return res.status(404).json({ message: "Invalid ID" });
     const post = await storage.getPost(id);
     if (!post) return res.status(404).json({ message: "Post not found" });
-    res.json(toPublicPost(post));
+    const [one] = await withCanDelete(req, res, [post]);
+    res.json(one);
   });
 
   // ── 사이언스타임즈 최신 기사 목록 ────────────────────────
