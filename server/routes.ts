@@ -22,7 +22,7 @@ import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, resolveUser, type AuthedRequest, type AuthUser } from "./auth.js";
-import { canManagePost, DELETE_FORBIDDEN_MESSAGE } from "../shared/postPermissions.js";
+import { canManagePost, manageOutcome } from "../shared/postPermissions.js";
 import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
 import {
@@ -311,25 +311,18 @@ async function loadPostForManage(
   res: Response
 ): Promise<{ post: Post; user: AuthUser } | null> {
   const user = await ensureAuth(req, res);
-  if (!user) return null;
+  if (!user) return null; // 401 은 ensureAuth 가 이미 보냈다
 
   const id = parseInt(String(req.params.id));
-  if (isNaN(id)) {
-    res.status(404).json({ message: "Invalid ID" });
-    return null;
-  }
+  // 숫자가 아니면 조회할 것도 없다. `manageOutcome` 과 같은 404 를 준다.
+  const post = isNaN(id) ? null : ((await storage.getPost(id)) ?? null);
 
-  const post = await storage.getPost(id);
-  if (!post) {
-    res.status(404).json({ message: "Post not found" });
+  const outcome = manageOutcome(user, post);
+  if (outcome.status !== 200) {
+    res.status(outcome.status).json({ message: outcome.message });
     return null;
   }
-
-  if (!canManagePost(user, post)) {
-    res.status(403).json({ message: DELETE_FORBIDDEN_MESSAGE });
-    return null;
-  }
-  return { post, user };
+  return { post: post!, user };
 }
 
 /** 신청 한 건에 대한 권한 확인. 상태 변경·삭제가 같이 쓴다. */

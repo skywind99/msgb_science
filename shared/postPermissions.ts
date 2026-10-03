@@ -27,3 +27,33 @@ export function canManagePost(user: ManagingUser, post: PostOwner): boolean {
 
 /** 거부 문구. 라우트와 화면이 같은 것을 쓴다. */
 export const DELETE_FORBIDDEN_MESSAGE = "작성자나 관리자만 삭제할 수 있어요.";
+
+export type ManageOutcome =
+  | { status: 200 }
+  | { status: 401; message: string }
+  | { status: 403; message: string }
+  | { status: 404; message: string };
+
+/**
+ * 삭제 요청의 결과를 정한다. **검사 순서가 여기 들어 있다.**
+ *
+ * 순서를 순수 함수로 떼어낸 이유는 하나다 — **순서가 곧 정보 유출 여부**라서
+ * 시험해야 한다. 없는 글에 403 을 주면 "권한이 없다" 가 곧 "그 글은 있다" 는 뜻이
+ * 된다. 라우트 안에 섞여 있으면 토큰 없이는 확인할 수 없다.
+ *
+ *  1. 비로그인 → 401. 누구인지 모르면 더 볼 것이 없다
+ *  2. 없는 글 → 404. **403 보다 먼저다**
+ *  3. 권한 없음 → 403
+ *
+ * (명단 경로는 반대로 권한을 먼저 본다. 거기는 학생 개인정보가 걸려 있어서
+ *  게시물이 있는지보다 권한이 앞선다.)
+ */
+export function manageOutcome(
+  user: ManagingUser | null,
+  post: PostOwner | null
+): ManageOutcome {
+  if (!user) return { status: 401, message: "로그인이 필요합니다." };
+  if (!post) return { status: 404, message: "Post not found" };
+  if (!canManagePost(user, post)) return { status: 403, message: DELETE_FORBIDDEN_MESSAGE };
+  return { status: 200 };
+}
