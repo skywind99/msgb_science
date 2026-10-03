@@ -1,20 +1,34 @@
-import { useState, useRef } from "react";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@shared/routes";
 import { useCreatePost } from "@/hooks/use-posts";
-import { X, Loader2, Pencil, Plus, Trash2, ImageIcon, AlignLeft, Upload, Link2, Youtube } from "lucide-react";
+import { X, Loader2, Pencil } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
-import { contentBlockSchema, type ContentBlock } from "@shared/schema";
-import { useAuthHeaders } from "@/contexts/admin";
 import {
-  ActivityFields,
-  activityToPayload,
-  emptyActivity,
-  type ActivityDraft,
-} from "@/components/ActivityFields";
+  firstText,
+  newEditorBlock,
+  toContentBlocks,
+  type EditorBlock,
+} from "@shared/postBlocks";
+import { ImageInput } from "@/components/ImageInput";
+import { PostBlockEditor } from "@/components/PostBlockEditor";
+import { useAuthHeaders } from "@/contexts/admin";
+import { activityToPayload } from "@/components/ActivityFields";
+import {
+  ActivityPanel,
+  applyAiDates,
+  emptyActivityPanel,
+  panelToDraft,
+  type ActivityPanelDraft,
+  type AiFilledField,
+} from "@/components/ActivityPanel";
+import { errorMessage, fetchAiStatus, readImage, readText } from "@/lib/aiFill";
+import { AiFillCard } from "@/components/AiFillCard";
+import type { AiFillResult } from "@shared/aiForms";
 
 // 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
 // 활동 정보의 앞뒤 관계 검사는 저장 직전에 서버와 같은 스키마로 한 번 더 돌린다.
@@ -36,270 +50,6 @@ function useAdminPw(): Record<string, string> {
   }
 }
 
-// 이미지 업로드 (파일 → Storage → URL)
-async function uploadImageFile(file: File, authHeaders: Record<string, string>): Promise<string | null> {
-  const res = await fetch("/api/upload-image", {
-    method: "POST",
-    headers: {
-      "Content-Type": file.type,
-      ...authHeaders,
-    },
-    body: file,
-  });
-  if (!res.ok) return null;
-  const data = await res.json() as { url?: string };
-  return data.url ?? null;
-}
-
-// 외부 URL → Storage 미러링
-async function mirrorImage(url: string, authHeaders: Record<string, string>): Promise<string> {
-  try {
-    const res = await fetch("/api/mirror-image", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...authHeaders,
-      },
-      body: JSON.stringify({ url }),
-    });
-    if (!res.ok) return url;
-    const data = await res.json() as { url?: string };
-    return data.url ?? url;
-  } catch {
-    return url;
-  }
-}
-
-interface ImageInputProps {
-  value: string;
-  onChange: (url: string) => void;
-  authHeaders: Record<string, string>;
-  label?: string;
-  placeholder?: string;
-}
-
-function ImageInput({ value, onChange, authHeaders, label, placeholder }: ImageInputProps) {
-  const [mode, setMode] = useState<"url" | "file">("file");
-  const [uploading, setUploading] = useState(false);
-  const [mirroring, setMirroring] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
-
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
-    try {
-      const url = await uploadImageFile(file, authHeaders);
-      if (url) {
-        onChange(url);
-        toast({ title: "이미지 업로드 완료" });
-      } else {
-        toast({ title: "업로드 실패", variant: "destructive" });
-      }
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
-  const handleMirror = async () => {
-    if (!value || !/^https?:\/\//i.test(value)) return;
-    setMirroring(true);
-    try {
-      const mirrored = await mirrorImage(value, authHeaders);
-      onChange(mirrored);
-      if (mirrored !== value) toast({ title: "이미지가 서버에 저장되었습니다." });
-    } finally {
-      setMirroring(false);
-    }
-  };
-
-  return (
-    <div className="space-y-2">
-      {label && (
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-          <ImageIcon className="w-3.5 h-3.5 text-primary" />
-          {label}
-        </div>
-      )}
-
-      {/* 탭: 파일 / URL */}
-      <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
-        <button
-          type="button"
-          onClick={() => setMode("file")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-            mode === "file" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Upload className="w-3 h-3" /> 파일 업로드
-        </button>
-        <button
-          type="button"
-          onClick={() => setMode("url")}
-          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-            mode === "url" ? "bg-background shadow text-foreground" : "text-muted-foreground hover:text-foreground"
-          }`}
-        >
-          <Link2 className="w-3 h-3" /> URL 입력
-        </button>
-      </div>
-
-      {mode === "url" ? (
-        <div className="space-y-2">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={value}
-              onChange={(e) => onChange(e.target.value)}
-              placeholder={placeholder ?? "https://example.com/image.jpg"}
-              className="flex-1 px-3 py-2 text-sm rounded-lg border-2 border-primary/20 bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-            />
-            {value && /^https?:\/\//i.test(value) && (
-              <button
-                type="button"
-                onClick={handleMirror}
-                disabled={mirroring}
-                title="이 URL 이미지를 서버에 저장"
-                className="flex items-center gap-1 px-3 py-2 text-xs font-semibold rounded-lg bg-primary/10 text-primary hover:bg-primary/20 disabled:opacity-50 transition-all whitespace-nowrap"
-              >
-                {mirroring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
-                저장
-              </button>
-            )}
-          </div>
-          <p className="text-[11px] text-muted-foreground">
-            외부 URL 입력 후 <strong>저장</strong> 버튼을 누르면 이미지를 서버에 보관합니다.
-          </p>
-        </div>
-      ) : (
-        <div>
-          <label
-            className={`flex flex-col items-center justify-center gap-2 w-full h-28 border-2 border-dashed rounded-xl cursor-pointer transition-all ${
-              uploading
-                ? "border-primary/30 bg-primary/5"
-                : "border-primary/30 hover:border-primary hover:bg-primary/5"
-            }`}
-          >
-            {uploading ? (
-              <Loader2 className="w-6 h-6 text-primary animate-spin" />
-            ) : (
-              <>
-                <Upload className="w-6 h-6 text-primary/60" />
-                <span className="text-xs text-muted-foreground">클릭하여 이미지 선택</span>
-                <span className="text-[10px] text-muted-foreground/60">JPG, PNG, GIF, WEBP</span>
-              </>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-              disabled={uploading}
-            />
-          </label>
-        </div>
-      )}
-
-      {/* 미리보기 */}
-      {value && /^https?:\/\//.test(value) && (
-        <div className="relative">
-          <img
-            src={value}
-            alt="미리보기"
-            className="w-full h-40 object-contain bg-muted rounded-lg border border-border"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-          />
-          {value.includes("supabase") && (
-            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-green-500/90 text-white text-[10px] font-bold">
-              ✓ 서버 저장됨
-            </span>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function BlockEditor({
-  blocks,
-  onChange,
-  authHeaders,
-}: {
-  blocks: ContentBlock[];
-  onChange: (blocks: ContentBlock[]) => void;
-  authHeaders: Record<string, string>;
-}) {
-  const addBlock = () => onChange([...blocks, { imageUrl: "", content: "" }]);
-  const removeBlock = (idx: number) => onChange(blocks.filter((_, i) => i !== idx));
-  const updateBlock = (idx: number, field: keyof ContentBlock, value: string) =>
-    onChange(blocks.map((b, i) => (i === idx ? { ...b, [field]: value } : b)));
-
-  return (
-    <div className="space-y-4">
-      {blocks.map((block, idx) => (
-        <div key={idx} className="rounded-xl border-2 border-border bg-muted/20 p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-primary/70 uppercase tracking-wide">블록 {idx + 1}</span>
-            {blocks.length > 1 && (
-              <button type="button" onClick={() => removeBlock(idx)}
-                className="p-1.5 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          <ImageInput
-            value={block.imageUrl ?? ""}
-            onChange={(url) => updateBlock(idx, "imageUrl", url)}
-            authHeaders={authHeaders}
-            label="🖼️ 이미지"
-            placeholder="이미지 URL 또는 파일 업로드"
-          />
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-              <Youtube className="w-3.5 h-3.5 text-red-500" />
-              🎬 유튜브 URL
-            </div>
-            <input
-              type="text"
-              value={(block as any).youtubeUrl ?? ""}
-              onChange={(e) => updateBlock(idx, "youtubeUrl" as keyof ContentBlock, e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=... 또는 https://youtu.be/..."
-              className="w-full px-3 py-2 text-sm rounded-lg border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
-              <AlignLeft className="w-3.5 h-3.5 text-primary" />
-              📝 텍스트 내용
-            </div>
-            <textarea
-              value={block.content ?? ""}
-              onChange={(e) => updateBlock(idx, "content", e.target.value)}
-              placeholder="이미지 아래에 들어갈 설명이나 내용을 입력하세요..."
-              rows={3}
-              className="w-full px-3 py-2 text-sm rounded-lg border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all resize-y"
-            />
-          </div>
-        </div>
-      ))}
-
-      <button
-        type="button"
-        onClick={addBlock}
-        className="w-full py-3 rounded-xl border-2 border-dashed border-primary/30 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2 font-medium text-sm"
-      >
-        <Plus className="w-4 h-4" /> 블록 추가 (이미지 + 텍스트 세트)
-      </button>
-    </div>
-  );
-}
-
 interface Props {
   category: string;
   categoryLabel: string;
@@ -307,9 +57,37 @@ interface Props {
 
 export function CreatePostDialog({ category, categoryLabel }: Props) {
   const [isOpen, setIsOpen] = useState(false);
-  const [blocks, setBlocks] = useState<ContentBlock[]>([{ imageUrl: "", content: "" }]);
+  const [blocks, setBlocks] = useState<EditorBlock[]>(() => [newEditorBlock("text")]);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
-  const [activity, setActivity] = useState<ActivityDraft>(emptyActivity);
+  const [activity, setActivity] = useState<ActivityPanelDraft>(emptyActivityPanel);
+
+  // AI 가 채운 칸. 사용자가 고치면 그 칸만 빠진다.
+  const [aiFilled, setAiFilled] = useState<Set<AiFilledField>>(new Set());
+  const [aiTitleFilled, setAiTitleFilled] = useState(false);
+  /**
+   * AI 가 넣은 본문 글상자. 다시 돌릴 때 **그 칸만** 갈아끼우기 위해 기억한다.
+   * `text` 는 넣을 당시의 내용이다 — 사용자가 고쳤으면 달라져 있으므로 건드리지 않는다.
+   */
+  const [aiBody, setAiBody] = useState<{ id: string; text: string } | null>(null);
+  const [aiBusy, setAiBusy] = useState<"image" | "text" | null>(null);
+
+  // 키가 등록돼 있는지. 다이얼로그를 열 때만 묻는다.
+  const { data: aiStatus } = useQuery({
+    queryKey: [api.ai.status.path],
+    enabled: isOpen,
+    staleTime: 60_000,
+    queryFn: () => fetchAiStatus(authHeaders),
+  });
+  // 아직 모르면 undefined. 카드가 "확인 중" 과 "설정 없음" 을 구분해 보여준다.
+  const aiReady = aiStatus ? aiStatus.groq || aiStatus.gemini : undefined;
+
+  /** 카드 상태 줄. 성공 문구와 AI_FILL_MESSAGES 오류가 같은 자리에 온다. */
+  const [aiStatusLine, setAiStatusLine] =
+    useState<{ kind: "ok" | "error"; message: string } | null>(null);
+
+  /** 등록을 눌렀을 때 막힌 활동 칸. 고치면 지운다. */
+  const [activityErrors, setActivityErrors] =
+    useState<Partial<Record<"date" | "startTime", string>>>({});
   const createPost = useCreatePost();
   const { toast } = useToast();
   const authHeaders = useAdminPw();
@@ -327,41 +105,153 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   const handleClose = () => {
     setIsOpen(false);
     form.reset({ category, title: "", content: "", imageUrl: "" });
-    setBlocks([{ imageUrl: "", content: "" }]);
+    setBlocks([newEditorBlock("text")]);
     setThumbnailUrl("");
-    setActivity(emptyActivity);
+    setActivity(emptyActivityPanel);
+    setAiFilled(new Set());
+    setAiTitleFilled(false);
+    setAiBody(null);
+    setAiBusy(null);
+    setAiStatusLine(null);
+    setActivityErrors({});
   };
 
-  const onSubmit = (data: FormValues) => {
-    const cleanedBlocks = blocks
-      .map((b) => ({
-        imageUrl: b.imageUrl?.trim() || undefined,
-        content: b.content?.trim() || undefined,
-        youtubeUrl: b.youtubeUrl?.trim() || undefined,
-      }))
-      .filter((b) => b.imageUrl || b.content || b.youtubeUrl);
+  /**
+   * AI 결과를 화면에 넣는다.
+   *
+   * **기존에 쓴 내용을 지우거나 덮어쓰지 않는다.**
+   *  - 제목: 비어 있을 때만 채운다
+   *  - 본문: 빈 글상자가 있으면 거기에, 없으면 새 글상자로 덧붙인다
+   *  - 활동 정보: `applyAiDates` 가 날짜 규칙까지 맞춰 준다
+   */
+  const applyAiResult = (result: {
+    title: string | null;
+    body: string | null;
+    [k: string]: unknown;
+  }) => {
+    // 제목: AI 가 넣었고 사용자가 안 고쳤으면 갈아끼운다. 직접 쓴 제목은 그대로 둔다.
+    const titleIsAis = aiTitleFilled;
+    if (titleIsAis || !form.getValues("title").trim()) {
+      form.setValue("title", result.title ?? "");
+      setAiTitleFilled(!!result.title);
+    }
 
-    const firstText = cleanedBlocks.find((b) => b.content)?.content ?? "";
+    // 본문: AI 가 넣은 글상자가 그대로면 갈아끼우고, 사용자가 고쳤으면 손대지 않는다.
+    setBlocks((prev) => {
+      const mineIdx = aiBody
+        ? prev.findIndex((b) => b.id === aiBody.id && b.value === aiBody.text)
+        : -1;
+
+      if (mineIdx >= 0) {
+        const next = [...prev];
+        if (result.body) {
+          next[mineIdx] = { ...next[mineIdx], value: result.body };
+          setAiBody({ id: next[mineIdx].id, text: result.body });
+        } else {
+          // 새 결과에 본문이 없으면 지난 본문을 비운다. 블록은 남겨 둔다
+          // (최소 1개 규칙과 순서를 흔들지 않기 위해).
+          next[mineIdx] = { ...next[mineIdx], value: "" };
+          setAiBody(null);
+        }
+        return next;
+      }
+
+      if (!result.body) return prev;
+
+      const emptyIdx = prev.findIndex((b) => b.type === "text" && !b.value.trim());
+      if (emptyIdx >= 0) {
+        const next = [...prev];
+        next[emptyIdx] = { ...next[emptyIdx], value: result.body };
+        setAiBody({ id: next[emptyIdx].id, text: result.body });
+        return next;
+      }
+      const block = newEditorBlock("text", result.body);
+      setAiBody({ id: block.id, text: result.body });
+      return [...prev, block];
+    });
+
+    // 활동 정보: 아직 보라색인 칸을 먼저 비우고 새 결과를 채운다.
+    // 그래야 먼저 돌린 안내문의 장소·정원·신청 기간이 남지 않는다.
+    const { next, filled } = applyAiDates(activity, result as never, aiFilled);
+    setActivity(next);
+    setAiFilled(new Set(filled));
+
+    return filled.length + (result.title ? 1 : 0) + (result.body ? 1 : 0);
+  };
+
+  /**
+   * 호출 한 번. **버튼을 눌렀을 때만 들어온다** — 올리기만 해서는 불리지 않는다.
+   * 결과와 오류 모두 카드 상태 줄에 남긴다. 오류 문구는 AI_FILL_MESSAGES 그대로다.
+   */
+  const runFill = async (mode: "image" | "text", call: () => Promise<AiFillResult>) => {
+    setAiBusy(mode);
+    setAiStatusLine(null);
+    try {
+      const filled = applyAiResult(await call());
+      setAiStatusLine({
+        kind: "ok",
+        message:
+          filled > 0
+            ? "제목, 본문, 활동 정보를 채웠어요. 보라색 칸을 확인해 주세요."
+            : "읽을 수 있는 정보가 없었어요. 직접 입력해 주세요.",
+      });
+    } catch (err) {
+      setAiStatusLine({ kind: "error", message: errorMessage(err) });
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
+  /** 올린 이미지 한 장을 읽는다. 카드에서 올린 것이라 늘 우리 스토리지에 있다. */
+  const runReadImage = () => runFill("image", () => readImage(thumbnailUrl, authHeaders));
+
+  /** 붙여 넣은 **글자만** 보낸다. 이미지는 보내지 않는다. */
+  const runReadText = (text: string) => runFill("text", () => readText(text, authHeaders));
+
+  const onSubmit = (data: FormValues) => {
+    const cleanedBlocks = toContentBlocks(blocks);
 
     const payload = {
       ...data,
       category, // prop에서 직접 사용 (hidden input 무시)
       imageUrl: thumbnailUrl || undefined,
-      content: firstText,
+      content: firstText(cleanedBlocks),
       blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
-      ...activityToPayload(activity, "create"),
+      // 날짜 1개 + 시각 둘을 일시로 합쳐서 기존 변환 함수에 그대로 넘긴다
+      ...activityToPayload(panelToDraft(activity), "create"),
     };
 
     // 활동 일시·마감의 앞뒤 관계를 서버와 같은 규칙으로 미리 확인한다.
     const checked = api.posts.create.input.safeParse(payload);
     if (!checked.success) {
+      /**
+       * 서버 문구는 "활동 일시를 입력해야 합니다" 하나뿐이라 **어느 칸이 문제인지
+       * 가리키지 못한다.** 날짜는 채웠는데 시각만 빈 경우가 흔해서, 그때는
+       * 칸을 짚어 준다.
+       */
+      const needsStartTime = activity.applyEnabled && !!activity.date && !activity.startTime;
+      const needsDate = activity.applyEnabled && !activity.date;
+
+      setActivityErrors(
+        needsStartTime
+          ? { startTime: "시작 시각을 입력해 주세요." }
+          : needsDate
+            ? { date: "활동 날짜를 입력해 주세요." }
+            : {}
+      );
+
       toast({
         title: "입력을 확인해 주세요.",
-        description: checked.error.errors[0].message,
+        description: needsStartTime
+          ? "시작 시각을 입력해 주세요."
+          : needsDate
+            ? "활동 날짜를 입력해 주세요."
+            : checked.error.errors[0].message,
         variant: "destructive",
       });
       return;
     }
+    setActivityErrors({});
 
     createPost.mutate(
       checked.data,
@@ -403,7 +293,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-2xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
+              className="relative w-full max-w-5xl bg-card rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               {/* Header */}
               <div className="flex items-center justify-between p-6 border-b bg-muted/30 shrink-0">
@@ -424,49 +314,94 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                 <form id="create-post-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <input type="hidden" {...form.register("category")} />
 
-                  {/* Title */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">제목</label>
-                    <input
-                      {...form.register("title")}
-                      placeholder="게시글 제목을 입력하세요"
-                      className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                  {/* AI 입구는 여기 하나뿐이다. 전체 폭이라 오른쪽 패널과 같은 줄에 두지 않는다. */}
+                  <AiFillCard
+                    authHeaders={authHeaders}
+                    imageUrl={thumbnailUrl}
+                    onImageChange={setThumbnailUrl}
+                    onFillFromImage={runReadImage}
+                    onFillFromText={runReadText}
+                    busy={aiBusy}
+                    ready={aiReady}
+                    status={aiStatusLine}
+                  />
+
+                  <div className="border-t border-border" />
+
+                  {/* 왼쪽은 글, 오른쪽은 활동 설정. 좁은 화면에서는 한 줄로 쌓인다. */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+
+                  <div className="lg:col-span-7 space-y-5 min-w-0">
+                    {/* Title */}
+                    <div className="space-y-2">
+                      <label className="text-sm font-semibold text-foreground">제목</label>
+                      <input
+                        {...form.register("title", {
+                          onChange: () => setAiTitleFilled(false),
+                        })}
+                        placeholder="게시글 제목을 입력하세요"
+                        className={`w-full px-4 py-3 rounded-xl border-2 bg-background focus:outline-none focus:ring-4 transition-all ${
+                          aiTitleFilled
+                            ? "border-violet-300 bg-violet-50 focus:border-violet-500 focus:ring-violet-200"
+                            : "border-border focus:border-primary focus:ring-primary/10"
+                        }`}
+                      />
+                      {form.formState.errors.title && (
+                        <p className="text-sm text-destructive font-medium">{form.formState.errors.title.message}</p>
+                      )}
+                    </div>
+
+                    {/* 대표 이미지 — 평범한 썸네일 카드. AI 입구는 맨 위 카드 하나뿐이다. */}
+                    <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+                      <div>
+                        <div className="text-sm font-semibold text-foreground">대표 이미지</div>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          목록 썸네일입니다. 비워두면 본문 첫 이미지를 씁니다.
+                          {thumbnailUrl && " 위에서 올린 이미지가 지정돼 있습니다 — 바꾸려면 아래에서 고르세요."}
+                        </p>
+                      </div>
+                      <ImageInput
+                        value={thumbnailUrl}
+                        onChange={setThumbnailUrl}
+                        authHeaders={authHeaders}
+                        variant="compact"
+                        placeholder="https://example.com/thumbnail.jpg"
+                      />
+                    </div>
+
+                    {/* Blocks */}
+                    <div className="space-y-2">
+                      <div className="flex items-baseline justify-between gap-2">
+                        <label className="text-sm font-semibold text-foreground">본문 블록</label>
+                        <span className="text-xs text-muted-foreground">총 {blocks.length}개</span>
+                      </div>
+                      <PostBlockEditor blocks={blocks} onChange={setBlocks} authHeaders={authHeaders} />
+                    </div>
+                  </div>
+
+                  <div className="lg:col-span-5 min-w-0">
+                    <ActivityPanel
+                      value={activity}
+                      onChange={(next) => {
+                        // 사용자가 고친 칸은 보라색 표시를 푼다.
+                        const changed = (Object.keys(next) as Array<keyof ActivityPanelDraft>).filter(
+                          (k) => next[k] !== activity[k]
+                        );
+                        if (changed.length > 0 && aiFilled.size > 0) {
+                          const rest = new Set(aiFilled);
+                          changed.forEach((k) => rest.delete(k as AiFilledField));
+                          setAiFilled(rest);
+                        }
+                        // 고친 칸의 오류 표시는 바로 내린다.
+                        if (next.date !== activity.date || next.startTime !== activity.startTime) {
+                          setActivityErrors({});
+                        }
+                        setActivity(next);
+                      }}
+                      aiFilled={aiFilled}
+                      fieldErrors={activityErrors}
                     />
-                    {form.formState.errors.title && (
-                      <p className="text-sm text-destructive font-medium">{form.formState.errors.title.message}</p>
-                    )}
-                  </div>
-
-                  {/* Thumbnail */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">
-                      대표 이미지
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(목록 썸네일 — 비워두면 본문 첫 이미지 사용)</span>
-                    </label>
-                    <ImageInput
-                      value={thumbnailUrl}
-                      onChange={setThumbnailUrl}
-                      authHeaders={authHeaders}
-                      placeholder="https://example.com/thumbnail.jpg"
-                    />
-                  </div>
-
-                  {/* Blocks */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">
-                      본문 블록
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(이미지와 내용을 자유롭게 조합)</span>
-                    </label>
-                    <BlockEditor blocks={blocks} onChange={setBlocks} authHeaders={authHeaders} />
-                  </div>
-
-                  {/* 활동 신청 */}
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-foreground">
-                      활동 신청
-                      <span className="ml-1.5 text-xs font-normal text-muted-foreground">(일반 공지라면 그대로 두세요)</span>
-                    </label>
-                    <ActivityFields value={activity} onChange={setActivity} />
+                    </div>
                   </div>
                 </form>
               </div>

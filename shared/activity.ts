@@ -52,3 +52,18 @@ export const STAGE_REJECT_MESSAGE: Record<Exclude<ActivityStage, "open">, string
   closed: "신청이 마감되었습니다.",
   ended: "이미 종료된 활동입니다.",
 };
+
+/**
+ * KST 기준 오늘 날짜 (yyyy-MM-dd).
+ *
+ * **서버와 브라우저가 같은 기준을 써야 한다.** 서버(Vercel 함수)는 UTC 라
+ * 밤이면 날짜가 하루 어긋나고, 브라우저는 보통 KST 지만 여행 중이거나
+ * 설정이 다르면 또 달라진다. 양쪽 다 여기로 통일한다.
+ *
+ * 쓰는 곳: AI 에게 "연도 없는 날짜의 기준" 을 알려줄 때, 그리고 입력한 활동
+ * 날짜가 이미 지났는지 볼 때.
+ */
+export function todayInKst(now = new Date()): string {
+  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
+  return kst.toISOString().slice(0, 10);
+}

@@ -91,6 +91,29 @@ export async function hitLimit(
   }
 }
 
+/**
+ * 센 것을 하나 되돌린다.
+ *
+ * 왜 "세고 나서 되돌리기" 인가: 먼저 세지 않으면 동시 요청이 한꺼번에 통과해
+ * 한도를 넘는다. 그래서 **들어올 때 세고, 실제로 일이 일어나지 않았을 때만**
+ * 되돌린다. 되돌리기가 늦어도 한도를 넘기지는 못한다.
+ *
+ * 창(window)은 건드리지 않는다. 시간이 지나면 어차피 초기화된다.
+ * 0 밑으로는 내려가지 않는다.
+ */
+export async function refundLimit(key: string): Promise<void> {
+  try {
+    await db.execute(sql`
+      update rate_limits
+         set count = greatest(0, count - 1)
+       where key = ${hashKey(key)}
+    `);
+  } catch (err) {
+    // 되돌리지 못해도 창이 지나면 초기화된다. 요청을 실패시킬 이유는 없다.
+    console.error("[rateLimit] 되돌리기 실패:", err);
+  }
+}
+
 /** 정상 처리된 뒤 실패 카운터를 지운다. 코드를 맞힌 학생이 다음에 막히지 않게. */
 export async function resetLimit(key: string): Promise<void> {
   try {
@@ -135,6 +158,15 @@ export const LIMITS = {
   applyPasswordFail: { limit: 10, windowSec: 600 },
   lookupPerStudent: { limit: 5, windowSec: 600 },
   lookupPerIp: { limit: 20, windowSec: 3600 },
+  /**
+   * AI 호출. **교사 한 명 기준 시간당 20회.**
+   *
+   * 강도 방어가 아니라 비용·남용 방지다. 키는 사이트 공용이라 한 사람이
+   * 몰아 쓰면 모두가 한도에 걸린다. 그래서 IP 가 아니라 **교사 id** 로 센다 —
+   * 학교는 한 반이 같은 공용 IP 로 나오므로 IP 기준은 여기서 의미가 없고,
+   * 이 경로는 로그인을 통과한 뒤에만 닿는다.
+   */
+  aiFill: { limit: 20, windowSec: 3600 },
   /**
    * 초대 링크 확인·수락. 토큰이 256비트 난수라 대입이 성립하지 않으므로
    * 강도 방어가 아니라 남용 방지용이다. 교사가 한 번 쓰는 경로라 넉넉할 필요가 없다.

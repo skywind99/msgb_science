@@ -2,8 +2,18 @@ import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { type PublicPost, type ContentBlock } from "@shared/schema";
 import { api } from "@shared/routes";
+import { splitLinks } from "@shared/linkify";
+import {
+  firstText,
+  renderBlock,
+  toContentBlocks,
+  toEditorBlocks,
+  type EditorBlock,
+} from "@shared/postBlocks";
 import { ActivityInfo } from "@/components/ActivityInfo";
 import { ApplicantList } from "@/components/ApplicantList";
+import { ImageInput } from "@/components/ImageInput";
+import { PostBlockEditor } from "@/components/PostBlockEditor";
 import {
   ActivityFields,
   activityFromPost,
@@ -13,10 +23,10 @@ import {
 } from "@/components/ActivityFields";
 import { queryClient } from "@/lib/queryClient";
 import { format } from "date-fns";
-import { ArrowLeft, Calendar, Pencil, Trash2, Plus, ImageIcon, AlignLeft, MoreVertical, Youtube, Bell, Upload, Loader2 } from "lucide-react";
+import { ArrowLeft, Calendar, Pencil, Trash2, MoreVertical, Bell } from "lucide-react";
 import { YoutubeEmbed, isYoutubeUrl } from "@/components/YoutubeEmbed";
 import { Button } from "@/components/ui/button";
-import { useState, useRef } from "react";
+import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -31,18 +41,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
-
-const isImageUrl = (str?: string | null): str is string => {
-  if (!str) return false;
-  return /^https?:\/\/.+/i.test(str) && (
-    /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i.test(str) ||
-    /\/(img|image|photo|upload|thumb|picture|bbs_\d|widg)/i.test(str)
-  );
-};
 
 const CATEGORY_LABELS: Record<string, string> = {
   home: "홈",
@@ -62,133 +63,35 @@ const CATEGORY_ROUTES: Record<string, string> = {
   local_community: "/community",
 };
 
-// 수정 다이얼로그용 이미지 입력 (파일업로드 + URL)
-function BlockImageInput({
-  value, onChange, authHeaders,
-}: { value: string; onChange: (url: string) => void; authHeaders: Record<string, string> }) {
-  const [mode, setMode] = useState<"file" | "url">("file");
-  const [uploading, setUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
-
-  const handleFile = async (file: File) => {
-    setUploading(true);
-    try {
-      const res = await fetch("/api/upload-image", {
-        method: "POST",
-        headers: { "Content-Type": file.type, ...authHeaders },
-        body: file,
-      });
-      if (res.ok) {
-        const data = await res.json() as { url?: string };
-        if (data.url) { onChange(data.url); toast({ title: "이미지 업로드 완료" }); }
-      } else {
-        toast({ title: "업로드 실패", variant: "destructive" });
-      }
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
+/**
+ * 글 안의 `http(s)://` 주소를 눌러 갈 수 있게 그린다.
+ *
+ * **`dangerouslySetInnerHTML` 을 쓰지 않는다.** 교사가 쓴 글이 그대로 HTML 이 되면
+ * `<script>` 한 줄로 끝난다. React 요소로 만들면 글자는 늘 글자로 남는다.
+ *
+ * 어디서 끊을지는 `shared/linkify.ts` 가 정한다 (`http`/`https` 만, 뒤따르는
+ * 문장 부호와 짝 없는 닫는 괄호는 떼어낸다). 줄바꿈은 바깥의
+ * `whitespace-pre-wrap` 이 그대로 살린다.
+ */
+function LinkedText({ text }: { text: string }) {
   return (
-    <div className="space-y-2">
-      <div className="flex gap-1 p-1 rounded-lg bg-muted w-fit">
-        {(["file", "url"] as const).map((m) => (
-          <button key={m} type="button" onClick={() => setMode(m)}
-            className={`flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-md transition-all ${mode === m ? "bg-background shadow text-foreground" : "text-muted-foreground"}`}>
-            {m === "file" ? <><Upload className="w-3 h-3" /> 파일</> : <><ImageIcon className="w-3 h-3" /> URL</>}
-          </button>
-        ))}
-      </div>
-      {mode === "file" ? (
-        <label className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-lg border-2 border-dashed cursor-pointer transition-all ${uploading ? "border-primary/30 bg-primary/5" : "border-border hover:border-primary hover:bg-primary/5"}`}>
-          {uploading ? <Loader2 className="w-4 h-4 text-primary animate-spin" /> : <Upload className="w-4 h-4 text-muted-foreground" />}
-          <span className="text-xs text-muted-foreground">{uploading ? "업로드 중..." : "클릭하여 이미지 선택"}</span>
-          <input ref={fileRef} type="file" accept="image/*" className="hidden"
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} disabled={uploading} />
-        </label>
-      ) : (
-        <Input value={value} onChange={(e) => onChange(e.target.value)}
-          placeholder="https://example.com/image.jpg" className="text-sm" />
+    <>
+      {splitLinks(text).map((part, i) =>
+        part.type === "link" ? (
+          <a
+            key={i}
+            href={part.value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline underline-offset-2 break-all hover:opacity-80"
+          >
+            {part.value}
+          </a>
+        ) : (
+          part.value
+        )
       )}
-      {value && /^https?:\/\//.test(value) && (
-        <img src={value} alt="" className="w-full h-28 object-contain bg-muted rounded-lg border border-border"
-          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-      )}
-    </div>
-  );
-}
-
-function BlockEditor({
-  blocks,
-  onChange,
-  authHeaders,
-}: {
-  blocks: ContentBlock[];
-  onChange: (blocks: ContentBlock[]) => void;
-  authHeaders: Record<string, string>;
-}) {
-  const addBlock = () => onChange([...blocks, { imageUrl: "", content: "" }]);
-  const removeBlock = (idx: number) => onChange(blocks.filter((_, i) => i !== idx));
-  const updateBlock = (idx: number, field: keyof ContentBlock, value: string) => {
-    onChange(blocks.map((b, i) => (i === idx ? { ...b, [field]: value } : b)));
-  };
-
-  return (
-    <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
-      {blocks.map((block, idx) => (
-        <div key={idx} className="rounded-xl border-2 border-border bg-muted/20 p-3 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-muted-foreground">블록 {idx + 1}</span>
-            {blocks.length > 1 && (
-              <button
-                type="button"
-                onClick={() => removeBlock(idx)}
-                className="p-1 rounded-lg hover:bg-destructive/10 text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-          <BlockImageInput
-            value={block.imageUrl ?? ""}
-            onChange={(url) => updateBlock(idx, "imageUrl", url)}
-            authHeaders={authHeaders}
-          />
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
-              <Youtube className="w-3 h-3 text-red-500" /> 🎬 유튜브 URL
-            </div>
-            <Input
-              value={(block as any).youtubeUrl ?? ""}
-              onChange={(e) => updateBlock(idx, "youtubeUrl" as any, e.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
-              className="text-sm"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-1 text-xs font-semibold text-foreground">
-              <AlignLeft className="w-3 h-3 text-primary" /> 📝 텍스트 내용
-            </div>
-            <Textarea
-              value={block.content ?? ""}
-              onChange={(e) => updateBlock(idx, "content", e.target.value)}
-              placeholder="이미지 아래에 들어갈 설명이나 내용..."
-              rows={2}
-              className="text-sm resize-y"
-            />
-          </div>
-        </div>
-      ))}
-      <button
-        type="button"
-        onClick={addBlock}
-        className="w-full py-2 rounded-xl border-2 border-dashed border-primary/30 text-primary/70 hover:border-primary hover:text-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-2 font-medium text-sm"
-      >
-        <Plus className="w-4 h-4" /> 블록 추가
-      </button>
-    </div>
+    </>
   );
 }
 
@@ -204,7 +107,7 @@ export default function PostDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editImageUrl, setEditImageUrl] = useState("");
-  const [editBlocks, setEditBlocks] = useState<ContentBlock[]>([{ imageUrl: "", content: "" }]);
+  const [editBlocks, setEditBlocks] = useState<EditorBlock[]>([]);
   const [editActivity, setEditActivity] = useState<ActivityDraft>(emptyActivity);
 
   const { data: post, isLoading } = useQuery<PublicPost>({
@@ -290,27 +193,21 @@ export default function PostDetail() {
     if (!post) return;
     setEditTitle(post.title);
     setEditImageUrl(post.imageUrl ?? "");
-    const existingBlocks = post.blocks as ContentBlock[] | null;
-    setEditBlocks(
-      existingBlocks && existingBlocks.length > 0
-        ? existingBlocks
-        : [{ imageUrl: "", content: post.content ?? "" }]
-    );
+    // 예전 글은 한 블록에 이미지·유튜브·글이 같이 들어 있다. 종류별로 쪼개서
+    // 보여주되 순서를 상세 페이지와 똑같이 유지한다 (shared/postBlocks.ts).
+    setEditBlocks(toEditorBlocks(post.blocks as ContentBlock[] | null, post));
     setEditActivity(activityFromPost(post));
     setEditOpen(true);
   };
 
   const handleEditSubmit = () => {
-    const cleanedBlocks = editBlocks
-      .map((b) => ({ imageUrl: b.imageUrl?.trim() || undefined, content: b.content?.trim() || undefined, youtubeUrl: (b as any).youtubeUrl?.trim() || undefined }))
-      .filter((b) => b.imageUrl || b.content || b.youtubeUrl);
-    const firstText = cleanedBlocks.find((b) => b.content)?.content ?? "";
+    const cleanedBlocks = toContentBlocks(editBlocks);
 
     const payload = {
       title: editTitle,
       imageUrl: editImageUrl.trim() || undefined,
       blocks: cleanedBlocks.length > 0 ? cleanedBlocks : undefined,
-      content: firstText,
+      content: firstText(cleanedBlocks),
       ...activityToPayload(editActivity, "update"),
     };
 
@@ -432,12 +329,10 @@ export default function PostDetail() {
         {/* 본문 블록 */}
         <div className="space-y-8">
           {displayBlocks.map((block, idx) => {
-            const imgSrc = isImageUrl(block.imageUrl) ? block.imageUrl
-                         : isImageUrl(block.content) ? block.content
-                         : null;
+            const { imgSrc, ytUrl, textContent } = renderBlock(block);
+            // 블록이 없는 예전 글은 대표 이미지로 첫 블록을 만들어 쓴다.
+            // 그때만 위쪽 대표 이미지와 겹치므로 본문 쪽을 건너뛴다.
             const skipImg = imgSrc && imgSrc === post.imageUrl && idx === 0 && !postBlocks;
-            const textContent = isImageUrl(block.content) ? null : (block.content || null);
-            const ytUrl = (block as any).youtubeUrl as string | undefined;
             return (
               <div key={idx} className="space-y-4">
                 {imgSrc && !skipImg && (
@@ -455,7 +350,7 @@ export default function PostDetail() {
                 )}
                 {textContent && (
                   <div className="prose prose-lg max-w-none text-foreground leading-relaxed whitespace-pre-wrap">
-                    {textContent}
+                    <LinkedText text={textContent} />
                   </div>
                 )}
               </div>
@@ -496,11 +391,16 @@ export default function PostDetail() {
                 대표 이미지
                 <span className="ml-1.5 text-xs font-normal text-muted-foreground">(목록 썸네일)</span>
               </Label>
-              <BlockImageInput value={editImageUrl} onChange={setEditImageUrl} authHeaders={authHeaders} />
+              <ImageInput
+                value={editImageUrl}
+                onChange={setEditImageUrl}
+                authHeaders={authHeaders}
+                variant="compact"
+              />
             </div>
             <div className="space-y-2">
               <Label>본문 블록</Label>
-              <BlockEditor blocks={editBlocks} onChange={setEditBlocks} authHeaders={authHeaders} />
+              <PostBlockEditor blocks={editBlocks} onChange={setEditBlocks} authHeaders={authHeaders} />
             </div>
             <div className="space-y-2">
               <Label>활동 신청</Label>

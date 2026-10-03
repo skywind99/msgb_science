@@ -1,4 +1,5 @@
-import { pgTable, text, serial, integer, timestamp, json, boolean, uuid, uniqueIndex, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, json, boolean, uuid, uniqueIndex, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -445,3 +446,104 @@ export const insertPopupSchema = createInsertSchema(popups, {
 
 export type InsertPopup = z.infer<typeof insertPopupSchema>;
 export type Popup = typeof popups.$inferSelect;
+
+// ── AI 공급자 키 ──────────────────────────────────────────
+// 키의 주인은 사람이 아니라 사이트다. 누가 AI 버튼을 눌러도 서버가 같은 키를 쓴다.
+// 교사별 키는 없다.
+//
+// **평문을 저장하지 않는다.** 공급자별 키를 AES-256-GCM 으로 암호화해 넣고,
+// 복호화 비밀값은 DB 가 아니라 환경변수(`AI_KEY_SECRET`)에 둔다.
+// 그래서 DB 덤프만으로는 키를 얻을 수 없다. (Supabase Vault 는 DB 안에서
+// 복호화되므로 이 성질을 잃는다. 그래서 쓰지 않았다.)
+//
+// 갱신자·갱신 시각을 공급자별로 둔 이유: 공용 열 하나면 Groq 키만 바꿨는데
+// Gemini 키의 "누가 언제" 까지 덮어써진다. 관리자가 여러 명일 때 추적이 틀어진다.
+export const aiSettings = pgTable("ai_settings", {
+  // 설정은 한 행뿐이다. 코드는 항상 id = 1 로 upsert 한다.
+  id: integer("id").primaryKey(),
+
+  groqKeyEnc: text("groq_key_enc"),            // null 이면 미등록
+  groqUpdatedBy: uuid("groq_updated_by").references(() => profiles.id, { onDelete: "set null" }),
+  groqUpdatedAt: timestamp("groq_updated_at"),
+
+  geminiKeyEnc: text("gemini_key_enc"),        // null 이면 미등록
+  geminiUpdatedBy: uuid("gemini_updated_by").references(() => profiles.id, { onDelete: "set null" }),
+  geminiUpdatedAt: timestamp("gemini_updated_at"),
+}, (t) => ({
+  // 두 번째 행이 생길 경로를 DB 에서 막는다.
+  singleRow: check("ai_settings_single_row", sql`${t.id} = 1`),
+}));
+
+/** 설정 행은 항상 이 id 다. */
+export const AI_SETTINGS_ID = 1;
+
+export type AiSettings = typeof aiSettings.$inferSelect;
+
+/** 키를 다루는 공급자. 화면·라우트·상수가 모두 이 목록을 기준으로 한다. */
+export const AI_PROVIDERS = ["groq", "gemini"] as const;
+export type AiProvider = (typeof AI_PROVIDERS)[number];
+
+/**
+ * 공급자별 키 상태. `GET /api/ai/status` 는 쓸 수 있는지(boolean)만 내려보내고,
+ * 이 셋으로 나눈 상태는 admin 전용 경로에서만 쓴다.
+ *
+ * - `none`       : 등록되지 않음
+ * - `ok`         : 복호화 성공
+ * - `unreadable` : 복호화 실패. `AI_KEY_SECRET` 이 바뀌었거나 없을 때.
+ *                  AES-GCM 은 인증 태그 검증에 실패하므로 조용히 쓰레기가 나오지 않는다.
+ *                  관리자가 키를 다시 등록하면 복구된다.
+ */
+export type AiKeyState = "none" | "ok" | "unreadable";
+
+/** 교사 화면이 받는 것. "쓸 수 있는가" 뿐이다. */
+export type AiStatusResponse = Record<AiProvider, boolean>;
+
+/** admin 전용. 상태와 누가 언제 바꿨는지. **키 값은 들어 있지 않다.** */
+export type AiKeyAdminEntry = {
+  state: AiKeyState;
+  updatedBy: string | null;
+  updatedByName: string | null;
+  updatedAt: string | null;
+};
+export type AiKeysAdminResponse = {
+  /** 서버에 AI_KEY_SECRET 이 설정돼 있는가. 없으면 등록해도 암호화할 수 없다. */
+  secretConfigured: boolean;
+  providers: Record<AiProvider, AiKeyAdminEntry>;
+};
+
+/**
+ * 오류 분류. 교사 화면과 AI 설정 팝업의 문구를 나누기 위한 것이다.
+ *
+ * `key_unreadable` 은 `AI_KEY_SECRET` 이 바뀌거나 사라져 복호화가 안 되는 경우다.
+ * "등록하지 않음"과 "거부됨"과 또 다르므로 따로 둔다.
+ */
+export const AI_FILL_ERRORS = [
+  "key_missing",
+  "key_unreadable",
+  "key_rejected",
+  "rate_limited",
+  "model_gone",
+  "bad_response",
+  "image_rejected",
+] as const;
+export type AiFillErrorCode = (typeof AI_FILL_ERRORS)[number];
+
+/** 교사 화면에 그대로 보여주는 문구. */
+export const AI_FILL_MESSAGES: Record<AiFillErrorCode, string> = {
+  key_missing: "관리자가 AI를 설정하지 않았어요.",
+  key_unreadable: "AI 키를 읽을 수 없습니다. 관리자에게 알려 주세요.",
+  key_rejected: "AI 키가 거부됐어요. 관리자에게 알려 주세요.",
+  rate_limited: "AI 사용량이 한도를 넘었어요. 잠시 후 다시 시도해 주세요.",
+  model_gone: "AI 모델을 찾을 수 없어요. 관리자에게 알려 주세요.",
+  bad_response: "AI 응답을 이해할 수 없었어요. 다시 시도해 주세요.",
+  image_rejected: "이 이미지는 AI로 읽을 수 없어요. 먼저 서버에 저장해 주세요.",
+};
+
+/** AI 설정 팝업(admin)에 보여주는 문구. 손쓸 방법이 다르므로 따로 둔다. */
+export const AI_KEY_ADMIN_MESSAGES: Record<AiKeyState, string> = {
+  none: "키가 등록되지 않았습니다.",
+  ok: "사용할 수 있습니다.",
+  unreadable: "키를 다시 등록해야 합니다. (AI_KEY_SECRET 이 바뀌었을 수 있습니다)",
+};
+
+export type AiFillErrorResponse = { code: AiFillErrorCode; message: string };

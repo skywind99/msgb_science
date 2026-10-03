@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { aiFillRequestSchema, putAiKeySchema } from "./aiForms.js";
 import { applyRequestSchema, lookupApplicationSchema } from "./applyForms.js";
 import {
   acceptInviteSchema,
@@ -16,6 +17,9 @@ import {
   type CreateInviteResponse,
   type InviteSummary,
   type LookupResponse,
+  type AiFillErrorResponse,
+  type AiKeysAdminResponse,
+  type AiStatusResponse,
   type PublicPost,
   type ResetPasswordResponse,
   type RosterEntry,
@@ -272,6 +276,75 @@ export const api = {
         204: z.void(),
         403: errorSchemas.notFound,
         404: errorSchemas.notFound,
+      },
+    },
+  },
+
+  // AI 보조 입력. 키의 주인은 사이트이고 교사별 키는 없다.
+  // 상세 설계는 docs/TODO.md 의 "AI 키·호출 설계".
+  ai: {
+    // 로그인한 교사 전원. **키 값은 절대 반환하지 않는다.**
+    // 테이블이 없거나 DB 오류여도 500 이 아니라 전부 false 를 돌려준다 —
+    // AI 버튼만 비활성이어야 하고 글쓰기 화면이 막히면 안 된다.
+    status: {
+      method: "GET" as const,
+      path: "/api/ai/status" as const,
+      responses: {
+        200: z.custom<AiStatusResponse>(),
+        401: errorSchemas.notFound,
+      },
+    },
+    // 5단계에서 화면과 연결한다. 지금은 뼈대만 있다.
+    fill: {
+      method: "POST" as const,
+      path: "/api/ai/fill" as const,
+      input: aiFillRequestSchema,
+      responses: {
+        200: z.custom<unknown>(), // 응답 모양은 5단계에서 확정
+        400: errorSchemas.validation,
+        401: errorSchemas.notFound,
+        429: errorSchemas.tooMany,
+        // 키 미등록·거부·모델 없음·응답 형식·이미지 거부는 code 로 구분한다
+        502: z.custom<AiFillErrorResponse>(),
+        503: z.custom<AiFillErrorResponse>(),
+      },
+    },
+  },
+
+  // 키 등록·교체·삭제. `requireAdmin()` 으로 admin 만 통과한다
+  // (초대·교사 계정 라우트와 **같은 함수**를 쓴다).
+  adminAiKeys: {
+    get: {
+      method: "GET" as const,
+      path: "/api/admin/ai-keys" as const,
+      responses: {
+        200: z.custom<AiKeysAdminResponse>(),
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
+      },
+    },
+    put: {
+      method: "PUT" as const,
+      path: "/api/admin/ai-keys" as const,
+      input: putAiKeySchema,
+      responses: {
+        200: z.custom<AiKeysAdminResponse>(),
+        400: errorSchemas.validation,
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
+        // 서버에 AI_KEY_SECRET 이 없어 암호화할 수 없는 경우
+        503: errorSchemas.validation,
+      },
+    },
+    // 본문 대신 쿼리(`?provider=groq`)를 쓴다. DELETE 본문은 다루는 쪽이 들쭉날쭉하다.
+    remove: {
+      method: "DELETE" as const,
+      path: "/api/admin/ai-keys" as const,
+      responses: {
+        200: z.custom<AiKeysAdminResponse>(),
+        400: errorSchemas.validation,
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
       },
     },
   },

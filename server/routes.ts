@@ -3,10 +3,16 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage.js";
 import { api } from "../shared/routes.js";
 import {
+  AI_FILL_MESSAGES,
+  AI_PROVIDERS,
   toMyApplication,
   toPublicPost,
   toInviteSummary,
   toRosterEntry,
+  type AiFillErrorCode,
+  type AiKeyAdminEntry,
+  type AiKeysAdminResponse,
+  type AiProvider,
   type Application,
   type Post,
 } from "../shared/schema.js";
@@ -16,6 +22,15 @@ import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, type AuthedRequest, type AuthUser } from "./auth.js";
+import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
+import { hasUsableSecret } from "./aiCrypto.js";
+import {
+  callWithFallback,
+  checkImageSize,
+  isAllowedImageUrl,
+  todayInKst,
+  type AiFillMode,
+} from "./aiProviders.js";
 import {
   acceptInvite,
   createInvite,
@@ -26,6 +41,7 @@ import {
   resetTeacherPassword,
 } from "./invites.js";
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
+import { aiFillResultSchema, aiProviderSchema } from "../shared/aiForms.js";
 import {
   applyToPost,
   cancelApplication,
@@ -43,6 +59,7 @@ import {
   hitLimit,
   LIMITS,
   pruneRateLimits,
+  refundLimit,
   resetLimit,
   type LimitResult,
 } from "./rateLimit.js";
@@ -153,6 +170,75 @@ function badRequest(res: Response, err: unknown) {
     });
   }
   throw err;
+}
+
+/**
+ * AI 오류를 code 와 교사용 문구로 함께 보낸다.
+ *
+ * code 로 구분하는 이유: 교사 화면과 AI 설정 팝업의 안내가 다르고, 관리자가
+ * 손쓸 수 있는 경우와 아닌 경우를 나눠야 한다.
+ * **사유를 응답에 담지 않는다** — 키 조각이나 요청 내용이 새지 않게.
+ */
+function aiError(res: Response, status: number, code: AiFillErrorCode) {
+  return res.status(status).json({ code, message: AI_FILL_MESSAGES[code] });
+}
+
+/** 공급자 이름을 사람이 읽는 말로. 교사가 "Groq" 을 몰라도 어디가 막혔는지 보인다. */
+const PROVIDER_LABEL: Record<AiProvider, string> = { groq: "Groq", gemini: "Gemini" };
+
+/**
+ * 공급자가 한도를 돌려줬을 때.
+ *
+ * **우리 시간당 20회 제한과 문구가 겹치면 안 된다.** 그쪽은
+ * "요청이 너무 많습니다. N초 후에…" 이고, 이쪽은 "AI 사용량이 한도를 넘었어요" 다.
+ * 둘 다 429 라서 문구가 유일한 구분점이다.
+ *
+ * 대기 시간이 아주 길면 초 단위로 알려 줘야 소용이 없다. 분·시간으로 세는 대신
+ * "오늘은 다 썼다" 로 바꾼다 — 교사가 기다릴지 포기할지 바로 정할 수 있다.
+ */
+const LONG_WAIT_SEC = 10 * 60;
+
+function providerRateLimited(res: Response, provider: AiProvider, retryAfterSec?: number) {
+  const who = PROVIDER_LABEL[provider];
+  const message =
+    retryAfterSec === undefined
+      ? `AI 사용량이 한도를 넘었어요 (${who}). 잠시 후 다시 시도해 주세요.`
+      : retryAfterSec > LONG_WAIT_SEC
+        ? `오늘은 AI 사용량을 다 썼어요 (${who}). 내일 다시 시도해 주세요.`
+        : `AI 사용량이 한도를 넘었어요 (${who}). 약 ${retryAfterSec}초 후에 다시 시도해 주세요.`;
+
+  if (retryAfterSec !== undefined) res.setHeader("Retry-After", String(retryAfterSec));
+  // **키와 요청 내용은 담지 않는다.** 공급자 이름과 초만 나간다.
+  return res.status(429).json({ code: "rate_limited", message, provider, retryAfter: retryAfterSec });
+}
+
+/**
+ * admin 이 보는 키 상태. **키 값은 절대 담지 않는다.**
+ * 갱신자 id 를 이름으로 바꿔 보여준다 — uuid 만 보면 누군지 알 수 없다.
+ */
+async function adminKeyView(): Promise<AiKeysAdminResponse> {
+  const status = await loadKeyStatus();
+
+  // 교사 목록에서 이름을 찾는다. 이 경로는 admin 전용이라 추가 노출이 없다.
+  let names = new Map<string, string>();
+  try {
+    for (const t of await listTeachers()) names.set(t.id, t.name);
+  } catch {
+    // 이름을 못 찾아도 상태는 보여준다. uuid 만 남는다.
+    names = new Map();
+  }
+
+  const providers = {} as Record<AiProvider, AiKeyAdminEntry>;
+  for (const provider of AI_PROVIDERS) {
+    const s = status[provider];
+    providers[provider] = {
+      state: s.state,
+      updatedBy: s.updatedBy,
+      updatedByName: s.updatedBy ? names.get(s.updatedBy) ?? null : null,
+      updatedAt: s.updatedAt,
+    };
+  }
+  return { secretConfigured: hasUsableSecret(), providers };
 }
 
 /** 오래된 요청 제한 행 정리. 크론을 새로 붙이지 않고 낮은 확률로 같이 처리한다. */
@@ -746,6 +832,170 @@ export async function registerRoutes(
     }
     // 임시 비밀번호가 실리는 유일한 응답이다. 다시 볼 수 없다.
     res.json({ loginId: result.loginId, tempPassword: result.tempPassword });
+  });
+
+  // ── AI 보조 입력 ─────────────────────────────────────────
+  // 키의 주인은 사이트다. 교사별 키는 없고, 등록·삭제는 admin 만 한다.
+  // 관리자 판정은 초대·교사 계정 라우트와 **같은 `requireAdmin()`** 을 쓴다.
+
+  /**
+   * 교사 화면이 보는 것. "쓸 수 있는가" 뿐이다.
+   *
+   * **어떤 경우에도 500 을 내지 않는다.** 테이블이 없거나 DB 가 흔들려도
+   * 전부 false 를 돌려준다 — AI 버튼만 비활성이어야 하고 글쓰기 화면이
+   * 통째로 막히면 안 된다. (요청 제한과 반대로 "열리는 쪽" 으로 실패한다.)
+   */
+  app.get(api.ai.status.path, async (req, res) => {
+    if (!(await ensureAuth(req, res))) return;
+    try {
+      const status = await loadKeyStatus();
+      res.json({ groq: status.groq.state === "ok", gemini: status.gemini.state === "ok" });
+    } catch (err) {
+      console.error(
+        "[ai/status] 상태를 읽지 못했습니다:",
+        err instanceof Error ? err.message : "알 수 없는 오류"
+      );
+      res.json({ groq: false, gemini: false });
+    }
+  });
+
+  /** admin 전용. 상태와 누가 언제 바꿨는지. **키 값은 들어 있지 않다.** */
+  app.get(api.adminAiKeys.get.path, requireAdmin(), async (_req, res) => {
+    res.json(await adminKeyView());
+  });
+
+  app.put(api.adminAiKeys.put.path, requireAdmin(), async (req, res) => {
+    const user = (req as AuthedRequest).authUser;
+    if (!user) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+    let input;
+    try {
+      input = api.adminAiKeys.put.input.parse(req.body);
+    } catch (err) {
+      return badRequest(res, err);
+    }
+
+    // 비밀값이 없으면 암호화할 수 없다. 평문을 넣는 일은 없어야 한다.
+    const stored = await saveKey(input.provider, input.key, user.id);
+    if (!stored) {
+      return res.status(503).json({
+        message:
+          "서버에 AI_KEY_SECRET 이 설정되지 않아 키를 저장할 수 없습니다. 환경변수를 넣고 재배포해 주세요.",
+      });
+    }
+    res.json(await adminKeyView());
+  });
+
+  app.delete(api.adminAiKeys.remove.path, requireAdmin(), async (req, res) => {
+    const user = (req as AuthedRequest).authUser;
+    if (!user) return res.status(401).json({ message: "로그인이 필요합니다." });
+
+    const parsed = aiProviderSchema.safeParse(req.query.provider);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "공급자를 지정해 주세요.", field: "provider" });
+    }
+    await clearKey(parsed.data, user.id);
+    res.json(await adminKeyView());
+  });
+
+  /**
+   * 본문·이미지에서 활동 정보를 뽑는다.
+   *
+   * **5단계에서 화면과 연결한다.** 지금은 인증·요청 제한·검증·이미지 주소 허용·
+   * 키 조회까지 하고, 실제 공급자 호출은 형식 확인 전이라 막혀 있다
+   * (`server/aiProviders.ts` 의 `확인 전` 주석).
+   */
+  app.post(api.ai.fill.path, async (req, res) => {
+    // 로그인을 먼저 통과시킨다. 그래서 아래에서 user 가 없는 경우가 없고,
+    // 요청 제한 키를 IP 로 대체할 일도 없다.
+    const user = await ensureAuth(req, res);
+    if (!user) return;
+
+    /**
+     * **먼저 세고, 공급자를 부르지 않았으면 되돌린다.**
+     *
+     * 세는 목적은 비용과 남용을 막는 것이다. 공급자에 닿지도 않은 요청은 비용이
+     * 0 이므로 깎을 이유가 없다. 특히 공급자가 429 를 준 경우에 우리 한도까지
+     * 같이 소진하면, 공급자가 풀려도 교사가 우리 쪽에 막힌다.
+     *
+     * 순서를 뒤집어 "부른 뒤에 센다" 로 하면 동시 요청이 한꺼번에 통과해 한도를
+     * 넘는다. 그래서 세는 것이 먼저다.
+     */
+    const limitKey = `ai:${user.id}`;
+    const gate = await hitLimit(limitKey, LIMITS.aiFill.limit, LIMITS.aiFill.windowSec);
+    if (!gate.ok) return tooManyRequests(res, gate);
+
+    /** 공급자를 부르지 않았거나 공급자가 한도를 돌려준 경우. 센 것을 물린다. */
+    const refund = () => refundLimit(limitKey);
+
+    let input;
+    try {
+      input = api.ai.fill.input.parse(req.body);
+    } catch (err) {
+      await refund();
+      return badRequest(res, err);
+    }
+
+    const mode: AiFillMode = input.imageUrl ? "image" : "text";
+
+    if (mode === "image") {
+      // 공급자가 URL 을 직접 가져가므로 우리가 바이트를 보지 않는다.
+      // 그래서 도메인과 용량을 **보내기 전에** 막는다.
+      if (!isAllowedImageUrl(input.imageUrl!)) {
+        await refund();
+        return aiError(res, 400, "image_rejected");
+      }
+
+      const size = await checkImageSize(input.imageUrl!);
+      if (!size.ok) {
+        console.error(`[ai/fill] 이미지 거부: ${size.reason}`);
+        await refund();
+        return aiError(res, 400, "image_rejected");
+      }
+    }
+
+    // 쓸 수 있는 키만 모은다. 하나만 등록돼 있어도 동작해야 한다.
+    const [groq, gemini] = await Promise.all([loadKey("groq"), loadKey("gemini")]);
+    const keys: Partial<Record<"groq" | "gemini", string>> = {};
+    if (groq.key) keys.groq = groq.key;
+    if (gemini.key) keys.gemini = gemini.key;
+
+    if (Object.keys(keys).length === 0) {
+      // "등록되지 않음" 과 "읽을 수 없음" 을 구분해 알려준다.
+      const unreadable = groq.state === "unreadable" || gemini.state === "unreadable";
+      await refund();
+      return aiError(res, 503, unreadable ? "key_unreadable" : "key_missing");
+    }
+
+    const { result } = await callWithFallback(mode, keys, {
+      mode,
+      text: input.text,
+      imageUrl: input.imageUrl,
+      today: todayInKst(),
+    });
+
+    if (!result.ok) {
+      // 사유는 로그에만. 요청 내용과 키는 남기지 않는다.
+      console.error(`[ai/fill] ${result.provider} 실패: ${result.reason}`);
+      if (result.code === "rate_limited") {
+        // 공급자가 거절해 아무 일도 일어나지 않았다. 우리 한도까지 깎지 않는다.
+        await refund();
+        return providerRateLimited(res, result.provider, result.retryAfterSec);
+      }
+      // bad_response · model_gone · key_rejected 는 실제로 불렀으므로 센 채로 둔다.
+      return aiError(res, 502, result.code);
+    }
+
+    // **공급자 응답을 믿지 않는다.** Gemini 는 스키마로 모양을 강제할 수 있지만
+    // Groq 은 "JSON 으로 답하라" 수준이고, 둘 다 형식이 어긋난 값을 낼 수 있다.
+    // 여기서 거르지 않으면 "2026년 봄" 같은 문자열이 날짜 칸으로 들어간다.
+    const checked = aiFillResultSchema.safeParse(result.data);
+    if (!checked.success) {
+      console.error(`[ai/fill] ${result.provider} 응답 형식 오류`);
+      return aiError(res, 502, "bad_response");
+    }
+
+    res.json(checked.data);
   });
 
   // ── 교사용 신청자 명단 ───────────────────────────────────
