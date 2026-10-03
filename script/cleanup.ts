@@ -24,7 +24,8 @@ if (!process.env.DATABASE_URL) {
   process.exit(1);
 }
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// CI 에서 운영 DB 에 붙는다. 한 번에 하나면 충분하고, 사이트가 쓸 연결을 남긴다.
+const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, max: 1 });
 
 /**
  * 활동이 끝난 시각은 종료 일시가 있으면 그것, 없으면 시작 일시로 본다
