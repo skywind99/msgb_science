@@ -42,6 +42,7 @@ import {
 } from "./invites.js";
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
 import { aiFillResultSchema, aiProviderSchema } from "../shared/aiForms.js";
+import { resolveAiYears } from "../shared/aiDates.js";
 import {
   applyToPost,
   cancelApplication,
@@ -995,7 +996,12 @@ export async function registerRoutes(
       return aiError(res, 502, "bad_response");
     }
 
-    res.json(checked.data);
+    // **연도는 서버가 정한다.** 모델은 "적혀 있었는지" 만 알려준다.
+    // 연도가 적혀 있었으면 과거여도 그대로 둔다 — 지난 행사를 기록으로 올리는
+    // 경우가 있어서, 미래로 밀면 멀쩡한 날짜를 망친다. 과거는 화면이 경고한다.
+    const resolved = resolveAiYears(checked.data, todayInKst());
+
+    res.json({ ...checked.data, ...resolved });
   });
 
   // ── 교사용 신청자 명단 ───────────────────────────────────

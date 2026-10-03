@@ -4,7 +4,7 @@ import {
   type AiFillErrorCode,
   type AiStatusResponse,
 } from "@shared/schema";
-import type { AiFillResult } from "@shared/aiForms";
+import type { AiFillResponse } from "@shared/aiForms";
 
 /**
  * AI 보조 입력 호출.
@@ -46,14 +46,14 @@ export async function fetchAiStatus(
 async function callFill(
   body: Record<string, string>,
   authHeaders: Record<string, string>
-): Promise<AiFillResult> {
+): Promise<AiFillResponse> {
   const res = await fetch(api.ai.fill.path, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw await toError(res);
-  return (await res.json()) as AiFillResult;
+  return (await res.json()) as AiFillResponse;
 }
 
 /**

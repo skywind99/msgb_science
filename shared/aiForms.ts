@@ -78,6 +78,16 @@ const timeOnly = z.preprocess((v) => {
   return `${String(h).padStart(2, "0")}:${m[2]}`;
 }, z.string().nullable());
 
+/** 참/거짓만. 모델이 "yes" 나 "true" 같은 글자로 답하는 일이 있어 받아 준다. */
+const nullableBool = z.preprocess((v) => {
+  if (typeof v === "boolean") return v;
+  if (typeof v !== "string") return null;
+  const t = v.trim().toLowerCase();
+  if (t === "true" || t === "yes" || t === "y") return true;
+  if (t === "false" || t === "no" || t === "n") return false;
+  return null;
+}, z.boolean().nullable());
+
 /** "2026-10-26T00:00" */
 const localDateTime = z.preprocess(
   (v) =>
@@ -102,6 +112,29 @@ export const aiFillResultSchema = z.object({
   applyStart: localDateTime,
   applyDeadline: localDateTime,
   applyNote: trimmed(500),
+
+  /**
+   * 연도 판정에 쓰는 세 가지. **값이 아니라 "원문에 뭐라고 적혀 있었는지" 다.**
+   *
+   * 모델에게는 `YYYY-MM-DD` 로 답하라고 하므로 연도를 반드시 하나 고르게 된다.
+   * 그래서 "그 연도가 원문에 있던 것인지" 를 따로 물어야 한다. 연도를 정하는 일은
+   * `shared/aiDates.ts` 가 한다 — 모델이 계산하면 틀려도 알 수 없고 시험할 수 없다.
+   *
+   * 답하지 않으면 `null` 이고, 그때는 **날짜를 손대지 않는다.** 모르는 채로 옮기면
+   * 연도가 적혀 있던 날짜를 멋대로 미래로 밀 수 있다.
+   */
+  dateHasYear: nullableBool,
+  applyHasYear: nullableBool,
+  /** 원문에 적힌 활동 시작 요일. "토" 또는 "토요일". 없으면 null. */
+  dateWeekday: trimmed(10),
 });
 
 export type AiFillResult = z.infer<typeof aiFillResultSchema>;
+
+/**
+ * 화면이 받는 응답. 서버가 연도를 정한 뒤 **어긋난 요일을 함께 알려준다.**
+ *
+ * `aiFillResultSchema` 는 "공급자가 뭐라고 했는가" 이고 이건 "서버가 무엇을
+ * 보냈는가" 다. 둘을 한 스키마로 합치면 공급자 응답 검증이 느슨해진다.
+ */
+export type AiFillResponse = AiFillResult & { weekdayMismatch: boolean };

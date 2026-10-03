@@ -29,7 +29,8 @@ import {
 } from "@/components/ActivityPanel";
 import { errorMessage, fetchAiStatus, readImage, readText } from "@/lib/aiFill";
 import { AiFillCard, type AiImageNotice } from "@/components/AiFillCard";
-import type { AiFillResult } from "@shared/aiForms";
+import type { AiFillResponse } from "@shared/aiForms";
+import { WEEKDAY_MISMATCH_NOTE } from "@shared/aiDates";
 
 // 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
 // 활동 정보의 앞뒤 관계 검사는 저장 직전에 서버와 같은 스키마로 한 번 더 돌린다.
@@ -95,6 +96,11 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
    * 되돌리려면 "원래 꺼져 있었다" 는 사실이 필요하다.
    */
   const [aiEnabledApply, setAiEnabledApply] = useState(false);
+  /**
+   * 날짜 칸 아래 안내. 지금은 "원문의 요일과 달라요" 하나다.
+   * 사용자가 날짜를 고치면 내린다 — 더 이상 AI 가 읽은 날짜가 아니다.
+   */
+  const [aiDateNote, setAiDateNote] = useState("");
 
   // 키가 등록돼 있는지. 다이얼로그를 열 때만 묻는다.
   const { data: aiStatus } = useQuery({
@@ -140,6 +146,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setAiReadImage("");
     setAiImageNotice(null);
     setAiEnabledApply(false);
+    setAiDateNote("");
     setAiStatusLine(null);
     setActivityErrors({});
   };
@@ -155,8 +162,11 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   const applyAiResult = (result: {
     title: string | null;
     body: string | null;
+    weekdayMismatch?: boolean;
     [k: string]: unknown;
   }) => {
+    // 연도는 서버가 정했다. 요일이 어긋났으면 날짜 칸 아래에 한 줄 띄운다.
+    setAiDateNote(result.weekdayMismatch ? WEEKDAY_MISMATCH_NOTE : "");
     // 제목: AI 가 넣었고 사용자가 안 고쳤으면 갈아끼운다. 직접 쓴 제목은 그대로 둔다.
     const titleIsAis = aiTitleFilled;
     if (titleIsAis || !form.getValues("title").trim()) {
@@ -215,7 +225,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
    */
   const runFill = async (
     mode: "image" | "text",
-    call: () => Promise<AiFillResult>
+    call: () => Promise<AiFillResponse>
   ): Promise<boolean> => {
     setAiBusy(mode);
     setAiStatusLine(null);
@@ -315,6 +325,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setAiFilled(new Set());
     setAiEnabledApply(false);
     setAiImageNotice(null);
+    setAiDateNote("");
     // "채웠어요" 가 더는 사실이 아니다.
     setAiStatusLine(null);
   };
@@ -512,10 +523,13 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                         if (next.date !== activity.date || next.startTime !== activity.startTime) {
                           setActivityErrors({});
                         }
+                        // 날짜를 고쳤으면 AI 가 읽은 날짜가 아니다. 요일 안내를 내린다.
+                        if (next.date !== activity.date) setAiDateNote("");
                         setActivity(next);
                       }}
                       aiFilled={aiFilled}
                       fieldErrors={activityErrors}
+                      dateNote={aiDateNote}
                     />
                     </div>
                   </div>

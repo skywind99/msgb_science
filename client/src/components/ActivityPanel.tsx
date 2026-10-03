@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarClock, ClipboardList, Info, Lock, MapPin, Users } from "lucide-react";
 import { Toggle, type ActivityDraft } from "@/components/ActivityFields";
 import { todayInKst } from "@shared/activity";
+import { nowInKst } from "@shared/aiDates";
 
 /**
  * 작성 화면 오른쪽 열 — 활동 신청 설정.
@@ -374,6 +375,7 @@ export function ActivityPanel({
   onChange,
   aiFilled,
   fieldErrors,
+  dateNote,
 }: {
   value: ActivityPanelDraft;
   onChange: (next: ActivityPanelDraft) => void;
@@ -391,6 +393,13 @@ export function ActivityPanel({
    * 결과다. 둘을 한 자리에 합치면 왜 막혔는지 알 수 없다.
    */
   fieldErrors?: Partial<Record<"date" | "startTime", string>>;
+  /**
+   * 날짜 칸 아래 한 줄 안내. 지금은 "원문의 요일과 달라요" 하나다.
+   *
+   * `fieldErrors` 와 섞지 않는다 — 그건 저장이 막힌 이유고, 이건 AI 가 읽은 것과
+   * 원문이 어긋났다는 귀띔이다. 저장은 막지 않는다.
+   */
+  dateNote?: string;
 }) {
   // 마감 칩을 누를 수 없을 때 보여주는 안내. 입력하면 사라진다.
   const [chipError, setChipError] = useState(false);
@@ -407,6 +416,19 @@ export function ActivityPanel({
   // KST 기준으로 본다. 브라우저 시간대가 다를 수 있고, AI 가 연도를 잘못 집으면
   // 작년 날짜가 들어온다. 그때 눈에 띄게 하려는 것이다.
   const isPastDate = !!value.date && value.date < todayInKst();
+
+  /**
+   * 신청 기간이 이미 지났는가. **활동 날짜와 따로 봐야 한다.**
+   *
+   * 예전에는 과거 경고가 날짜 칸에만 있었다. 그래서 마감이 과거로 들어가면
+   * **아무 안내 없이 접수가 닫힌 글**이 됐다 — 학생에게는 신청 버튼이 안 보이고,
+   * 교사는 왜 그런지 알 수 없다. 저장은 막지 않는다(지난 행사 기록이 있다).
+   *
+   * `datetime-local` 과 같은 모양이라 문자열끼리 비교한다.
+   */
+  const now = nowInKst();
+  const pastApplyStart = !!value.applyStart && value.applyStart < now;
+  const pastApplyDeadline = !!value.applyDeadline && value.applyDeadline < now;
 
   /** 신청 마감을 활동 시작 기준으로 채운다. 0 이면 시작 시각 그대로. */
   const fillDeadline = (daysBefore: number) => {
@@ -460,6 +482,9 @@ export function ActivityPanel({
                 이미 지난 날짜예요. 연도를 확인해 주세요.
               </p>
             )}
+            {/* 요일이 어긋났다는 귀띔. 연도는 바꾸지 않았다 — 어느 쪽이 틀렸는지는
+                사람이 봐야 안다. */}
+            {dateNote && <p className="text-xs text-amber-700 font-medium">{dateNote}</p>}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -549,6 +574,11 @@ export function ActivityPanel({
               onChange={(e) => set("applyStart", e.target.value)}
               className={cls("applyStart")}
             />
+            {pastApplyStart && (
+              <p className="text-xs text-amber-700 font-medium">
+                이미 지난 시각이에요. 접수는 바로 열립니다.
+              </p>
+            )}
           </Field>
 
           <Field label="신청 마감" hint="(비우면 활동 시작까지)">
@@ -558,6 +588,12 @@ export function ActivityPanel({
               onChange={(e) => set("applyDeadline", e.target.value)}
               className={cls("applyDeadline")}
             />
+            {/* 마감이 과거면 **아무도 신청할 수 없다.** 가장 눈에 띄어야 한다. */}
+            {pastApplyDeadline && (
+              <p className="text-xs text-destructive font-medium">
+                이미 지난 시각이에요. 이대로 저장하면 아무도 신청할 수 없어요.
+              </p>
+            )}
           </Field>
 
           <div className="flex gap-2">
