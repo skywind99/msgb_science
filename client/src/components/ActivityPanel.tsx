@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, ClipboardList, Info, Loader2, Lock, MapPin, Sparkles, Users } from "lucide-react";
+import { CalendarClock, ClipboardList, Info, Lock, MapPin, Users } from "lucide-react";
 import { Toggle, type ActivityDraft } from "@/components/ActivityFields";
 import { todayInKst } from "@shared/activity";
 
@@ -321,19 +321,16 @@ export function ActivityPanel({
   value,
   onChange,
   aiFilled,
-  onAiFill,
-  aiBusy,
-  aiHint,
 }: {
   value: ActivityPanelDraft;
   onChange: (next: ActivityPanelDraft) => void;
-  /** AI 가 채운 칸. 사용자가 고치면 호출하는 쪽에서 지운다. */
+  /**
+   * AI 가 채운 칸. 사용자가 고치면 호출하는 쪽에서 지운다.
+   *
+   * **AI 를 부르는 버튼은 여기 없다.** 입구는 글쓰기 화면 맨 위의 `AiFillCard`
+   * 하나뿐이다. 이 패널은 결과를 보여주고 고치는 곳이다.
+   */
   aiFilled?: ReadonlySet<AiFilledField>;
-  /** "AI 입력" 버튼. 없으면 버튼을 그리지 않는다. */
-  onAiFill?: () => void;
-  aiBusy?: boolean;
-  /** 버튼 아래 안내(키 미등록 등). 없으면 안 보인다. */
-  aiHint?: string;
 }) {
   // 마감 칩을 누를 수 없을 때 보여주는 안내. 입력하면 사라진다.
   const [chipError, setChipError] = useState(false);
@@ -373,40 +370,7 @@ export function ActivityPanel({
       {value.applyEnabled && (
         <div className="space-y-4 pt-4 border-t border-border">
           {/* 활동 정보 */}
-          <div className="flex items-center justify-between gap-2">
-            <GroupHeading icon={<CalendarClock className="w-3.5 h-3.5" />}>활동 정보</GroupHeading>
-            {onAiFill && (
-              <button
-                type="button"
-                onClick={onAiFill}
-                disabled={aiBusy || !!aiHint}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg border-2 border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-              >
-                {aiBusy ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" />
-                )}
-                {aiBusy ? "읽는 중…" : "AI 입력"}
-              </button>
-            )}
-          </div>
-
-          {/* 글에도 학생 이름이 들어갈 수 있다. 이미지 쪽과 같은 경고를 둔다. */}
-          {onAiFill && (
-            <p className="text-xs text-muted-foreground">
-              본문 글상자의 <strong>글자만</strong> AI 서비스(Google Gemini, 장애 시 Groq)로
-              보냅니다. 이미지는 보내지 않아요. 무료 이용 중에는 입력한 내용이 공급자의 서비스
-              개선에 쓰일 수 있으니, 학생의 이름이나 개인정보가 담긴 글은 보내지 마세요.
-            </p>
-          )}
-
-          {aiHint && (
-            <p className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>{aiHint}</span>
-            </p>
-          )}
+          <GroupHeading icon={<CalendarClock className="w-3.5 h-3.5" />}>활동 정보</GroupHeading>
 
           {aiFilled && aiFilled.size > 0 && (
             <p className="flex gap-2 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg p-2.5">

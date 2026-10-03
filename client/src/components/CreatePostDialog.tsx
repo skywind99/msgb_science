@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@shared/routes";
 import { useCreatePost } from "@/hooks/use-posts";
-import { X, Loader2, Pencil, Sparkles, Info } from "lucide-react";
+import { X, Loader2, Pencil } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { AnimatePresence, motion } from "framer-motion";
@@ -27,7 +27,8 @@ import {
   type AiFilledField,
 } from "@/components/ActivityPanel";
 import { errorMessage, fetchAiStatus, readImage, readText } from "@/lib/aiFill";
-import { isPublicStorageUrl } from "@shared/storageUrl";
+import { AiFillCard } from "@/components/AiFillCard";
+import type { AiFillResult } from "@shared/aiForms";
 
 // 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
 // 활동 정보의 앞뒤 관계 검사는 저장 직전에 서버와 같은 스키마로 한 번 더 돌린다.
@@ -77,14 +78,12 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     staleTime: 60_000,
     queryFn: () => fetchAiStatus(authHeaders),
   });
-  const aiReady = !!aiStatus && (aiStatus.groq || aiStatus.gemini);
-  const aiHint = aiStatus && !aiReady ? "관리자가 AI를 설정하지 않았어요." : undefined;
+  // 아직 모르면 undefined. 카드가 "확인 중" 과 "설정 없음" 을 구분해 보여준다.
+  const aiReady = aiStatus ? aiStatus.groq || aiStatus.gemini : undefined;
 
-  /** 대표 이미지가 우리 스토리지에 있어야 서버가 읽을 수 있다. */
-  const thumbnailReadable = isPublicStorageUrl(
-    thumbnailUrl,
-    import.meta.env.VITE_SUPABASE_URL as string | undefined
-  );
+  /** 카드 상태 줄. 성공 문구와 AI_FILL_MESSAGES 오류가 같은 자리에 온다. */
+  const [aiStatusLine, setAiStatusLine] =
+    useState<{ kind: "ok" | "error"; message: string } | null>(null);
   const createPost = useCreatePost();
   const { toast } = useToast();
   const authHeaders = useAdminPw();
@@ -109,6 +108,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setAiTitleFilled(false);
     setAiBody(null);
     setAiBusy(null);
+    setAiStatusLine(null);
   };
 
   /**
@@ -174,52 +174,34 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     return filled.length + (result.title ? 1 : 0) + (result.body ? 1 : 0);
   };
 
-  /** 대표 이미지 한 장을 읽는다. **버튼을 눌렀을 때만 전송된다.** */
-  const runReadImage = async () => {
-    setAiBusy("image");
+  /**
+   * 호출 한 번. **버튼을 눌렀을 때만 들어온다** — 올리기만 해서는 불리지 않는다.
+   * 결과와 오류 모두 카드 상태 줄에 남긴다. 오류 문구는 AI_FILL_MESSAGES 그대로다.
+   */
+  const runFill = async (mode: "image" | "text", call: () => Promise<AiFillResult>) => {
+    setAiBusy(mode);
+    setAiStatusLine(null);
     try {
-      const filled = applyAiResult(await readImage(thumbnailUrl, authHeaders));
-      toast(
-        filled > 0
-          ? { title: "AI가 읽은 값을 채웠습니다.", description: "보라색 칸을 꼭 확인해 주세요." }
-          : { title: "읽을 수 있는 정보가 없었어요.", description: "직접 입력해 주세요." }
-      );
-    } catch (err) {
-      toast({ title: "AI로 읽지 못했어요", description: errorMessage(err), variant: "destructive" });
-    } finally {
-      setAiBusy(null);
-    }
-  };
-
-  /** 본문 글상자의 **글자만** 보낸다. 이미지는 보내지 않는다. */
-  const runReadText = async () => {
-    const text = blocks
-      .filter((b) => b.type === "text" && b.value.trim())
-      .map((b) => b.value.trim())
-      .join("\n\n");
-
-    if (!text) {
-      toast({
-        title: "본문이 비어 있어요",
-        description: "글상자에 안내문을 붙여 넣은 뒤 다시 눌러 주세요.",
+      const filled = applyAiResult(await call());
+      setAiStatusLine({
+        kind: "ok",
+        message:
+          filled > 0
+            ? "제목, 본문, 활동 정보를 채웠어요. 보라색 칸을 확인해 주세요."
+            : "읽을 수 있는 정보가 없었어요. 직접 입력해 주세요.",
       });
-      return;
-    }
-
-    setAiBusy("text");
-    try {
-      const filled = applyAiResult(await readText(text, authHeaders));
-      toast(
-        filled > 0
-          ? { title: "AI가 읽은 값을 채웠습니다.", description: "보라색 칸을 꼭 확인해 주세요." }
-          : { title: "읽을 수 있는 정보가 없었어요.", description: "직접 입력해 주세요." }
-      );
     } catch (err) {
-      toast({ title: "AI로 읽지 못했어요", description: errorMessage(err), variant: "destructive" });
+      setAiStatusLine({ kind: "error", message: errorMessage(err) });
     } finally {
       setAiBusy(null);
     }
   };
+
+  /** 올린 이미지 한 장을 읽는다. 카드에서 올린 것이라 늘 우리 스토리지에 있다. */
+  const runReadImage = () => runFill("image", () => readImage(thumbnailUrl, authHeaders));
+
+  /** 붙여 넣은 **글자만** 보낸다. 이미지는 보내지 않는다. */
+  const runReadText = (text: string) => runFill("text", () => readText(text, authHeaders));
 
   const onSubmit = (data: FormValues) => {
     const cleanedBlocks = toContentBlocks(blocks);
@@ -303,13 +285,25 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
 
               {/* Body */}
               <div className="p-6 overflow-y-auto flex-1">
-                {/* 왼쪽은 글, 오른쪽은 활동 설정. 좁은 화면에서는 한 줄로 쌓인다. */}
-                <form
-                  id="create-post-form"
-                  onSubmit={form.handleSubmit(onSubmit)}
-                  className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start"
-                >
+                <form id="create-post-form" onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <input type="hidden" {...form.register("category")} />
+
+                  {/* AI 입구는 여기 하나뿐이다. 전체 폭이라 오른쪽 패널과 같은 줄에 두지 않는다. */}
+                  <AiFillCard
+                    authHeaders={authHeaders}
+                    imageUrl={thumbnailUrl}
+                    onImageChange={setThumbnailUrl}
+                    onFillFromImage={runReadImage}
+                    onFillFromText={runReadText}
+                    busy={aiBusy}
+                    ready={aiReady}
+                    status={aiStatusLine}
+                  />
+
+                  <div className="border-t border-border" />
+
+                  {/* 왼쪽은 글, 오른쪽은 활동 설정. 좁은 화면에서는 한 줄로 쌓인다. */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
 
                   <div className="lg:col-span-7 space-y-5 min-w-0">
                     {/* Title */}
@@ -331,13 +325,13 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                       )}
                     </div>
 
-                    {/* 대표 이미지 — 카드로 묶는다. 3단계에서 이 카드 안에
-                        AI 상태 줄과 개인정보 안내가 들어온다. */}
+                    {/* 대표 이미지 — 평범한 썸네일 카드. AI 입구는 맨 위 카드 하나뿐이다. */}
                     <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
                       <div>
                         <div className="text-sm font-semibold text-foreground">대표 이미지</div>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           목록 썸네일입니다. 비워두면 본문 첫 이미지를 씁니다.
+                          {thumbnailUrl && " 위에서 올린 이미지가 지정돼 있습니다 — 바꾸려면 아래에서 고르세요."}
                         </p>
                       </div>
                       <ImageInput
@@ -347,47 +341,6 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                         variant="compact"
                         placeholder="https://example.com/thumbnail.jpg"
                       />
-
-                      {/* 개인정보 안내 — 이미지가 있을 때만. 누르기 전에 읽히도록 버튼 위에 둔다. */}
-                      {thumbnailUrl && (
-                        <p className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
-                          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-                          <span>
-                            <strong>"AI로 읽기"를 누르면</strong> 이 이미지가 AI 서비스(Google
-                            Gemini, 장애 시 Groq)로 전송됩니다. 무료 이용 중에는 입력한 내용이
-                            공급자의 서비스 개선에 쓰일 수 있습니다. 학생의 이름·얼굴이 나온
-                            사진이나 개인정보가 담긴 글은 보내지 마세요.
-                          </span>
-                        </p>
-                      )}
-
-                      {thumbnailUrl && (
-                        <div className="space-y-1.5">
-                          <button
-                            type="button"
-                            onClick={runReadImage}
-                            disabled={!aiReady || !thumbnailReadable || aiBusy !== null}
-                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border-2 border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                          >
-                            {aiBusy === "image" ? (
-                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                            ) : (
-                              <Sparkles className="w-3.5 h-3.5" />
-                            )}
-                            {aiBusy === "image" ? "읽는 중…" : "AI로 읽기"}
-                          </button>
-
-                          <p className="text-xs text-muted-foreground">
-                            {!aiStatus
-                              ? "AI 설정을 확인하는 중…"
-                              : !aiReady
-                                ? "관리자가 AI를 설정하지 않았어요."
-                                : !thumbnailReadable
-                                  ? "외부 주소 이미지는 읽을 수 없어요. URL 탭의 “저장” 을 눌러 서버에 보관한 뒤 다시 시도해 주세요."
-                                  : "AI 사용 가능 · 포스터라면 제목과 활동 정보를 채워 줍니다."}
-                          </p>
-                        </div>
-                      )}
                     </div>
 
                     {/* Blocks */}
@@ -416,10 +369,8 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                         setActivity(next);
                       }}
                       aiFilled={aiFilled}
-                      onAiFill={runReadText}
-                      aiBusy={aiBusy === "text"}
-                      aiHint={aiHint}
                     />
+                    </div>
                   </div>
                 </form>
               </div>
