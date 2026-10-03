@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { passwordSchema } from "./passwordRule.js";
 import { checkTeacherId, MAX_ID_LENGTH } from "./teacherId.js";
 
 /**
@@ -31,8 +32,9 @@ export const acceptInviteSchema = z
       .toLowerCase()
       .min(1, "아이디를 입력해 주세요.")
       .max(MAX_ID_LENGTH),
-    // Supabase Auth 는 bcrypt 를 쓴다. 72바이트를 넘으면 조용히 잘리므로 여기서 막는다.
-    password: z.string().min(8, "비밀번호는 8자 이상이어야 합니다.").max(72),
+    // 가입·변경·관리자 재설정이 **같은 규칙**을 쓴다. 갈라지면 가입은 막는데
+    // 변경은 통과하는 식이 되고, 안내 문구도 서로 달라진다.
+    password: passwordSchema,
     name: z.string().trim().min(2, "이름을 입력해 주세요.").max(20),
   })
   // 클라이언트도 같은 함수로 검사한다. 규칙이 갈라지면 화면은 통과인데 서버가 400 을 준다.
@@ -48,9 +50,20 @@ export const checkInviteSchema = z.object({
   token: z.string().min(20).max(200),
 });
 
-/** 관리자가 교사 비밀번호를 재설정할 때. 새 비밀번호는 서버가 만들어 한 번만 보여준다. */
+/**
+ * 관리자가 교사 비밀번호를 재설정할 때.
+ *
+ * `password` 를 비우면 서버가 무작위로 만들어 **한 번만** 보여준다. 넣으면 그
+ * 값으로 바꾸고 응답에는 담지 않는다. 규칙은 가입·본인 변경과 같다.
+ */
 export const resetPasswordSchema = z.object({
   teacherId: z.string().uuid(),
+  password: passwordSchema.optional(),
+});
+
+/** 본문만 따로 검사할 때 (라우트는 `:id` 를 경로에서 받는다). */
+export const resetPasswordBodySchema = z.object({
+  password: passwordSchema.optional(),
 });
 
 export type CreateInviteRequest = z.infer<typeof createInviteSchema>;

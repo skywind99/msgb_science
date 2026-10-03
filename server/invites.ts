@@ -231,7 +231,9 @@ function generateTempPassword(): string {
 }
 
 export type ResetResult =
-  | { ok: true; loginId: string; tempPassword: string }
+  // `tempPassword` 는 **무작위로 만들었을 때만** 값이 있다.
+  // 관리자가 직접 지정했으면 null — 아는 값을 되돌려 보낼 이유가 없다.
+  | { ok: true; loginId: string; tempPassword: string | null }
   | { ok: false; status: number; message: string };
 
 /**
@@ -240,10 +242,20 @@ export type ResetResult =
  * 교사는 받을 수 없는 주소를 쓰므로 메일로 스스로 재설정할 수 없다
  * (`shared/teacherId.ts` 의 대가). 이 경로가 유일한 복구 수단이다.
  *
- * 임시 비밀번호를 서버가 만들어 한 번만 돌려준다. 관리자가 정하게 하면
- * 결국 흔한 값을 쓴다.
+ * 비우면 서버가 무작위로 만들어 한 번만 돌려준다. 그게 기본이다 — 관리자가
+ * 매번 정하게 하면 결국 흔한 값을 쓴다. 지정은 선택이고, 지정한 값은 돌려주지 않는다.
  */
-export async function resetTeacherPassword(teacherId: string): Promise<ResetResult> {
+export async function resetTeacherPassword(
+  teacherId: string,
+  /**
+   * 관리자가 지정한 비밀번호. 없으면 서버가 무작위로 만든다.
+   *
+   * **호출하는 쪽이 이미 `passwordSchema` 로 검사했다고 믿지 않는다** — 라우트에서
+   * 한 번 더 거른다. 여기까지 검사 없이 들어오면 6자 비밀번호가 통과한다
+   * (Supabase 쪽 최소 길이가 6자다).
+   */
+  password?: string
+): Promise<ResetResult> {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_KEY;
   if (!url || !key) {
@@ -261,10 +273,13 @@ export async function resetTeacherPassword(teacherId: string): Promise<ResetResu
     return { ok: false, status: 404, message: "계정을 찾을 수 없습니다." };
   }
 
-  const tempPassword = generateTempPassword();
+  // 관리자가 지정했으면 그 값, 아니면 무작위. **무작위일 때만 돌려준다.**
+  const generated = password ? null : generateTempPassword();
+  const newPassword = password ?? generated!;
+
   const supabase = createSupabaseClient(url, key);
   const updated = await supabase.auth.admin.updateUserById(teacherId, {
-    password: tempPassword,
+    password: newPassword,
   });
 
   if (updated.error || !updated.data.user) {
@@ -275,7 +290,9 @@ export async function resetTeacherPassword(teacherId: string): Promise<ResetResu
   return {
     ok: true,
     loginId: toDisplayId(updated.data.user.email ?? ""),
-    tempPassword,
+    // 지정한 값은 담지 않는다. 관리자가 이미 아는 값이고, 응답에 실으면
+    // 네트워크 로그와 브라우저 기록에 한 번 더 남는다.
+    tempPassword: generated,
   };
 }
 

@@ -102,7 +102,13 @@ export type TeacherAccount = {
  */
 export type ResetPasswordResponse = {
   loginId: string;
-  tempPassword: string;
+  /**
+   * 무작위로 만들었을 때만 값이 있다. **관리자가 직접 지정했으면 `null` 이다.**
+   *
+   * 지정한 값을 되돌려 보내지 않는 이유는 간단하다 — 관리자가 이미 아는 값이고,
+   * 응답에 실으면 네트워크 로그·브라우저 기록에 한 번 더 남는다. 남길 이유가 없다.
+   */
+  tempPassword: string | null;
 };
 
 // ── 게시물 (공지 + 활동 겸용) ─────────────────────────────

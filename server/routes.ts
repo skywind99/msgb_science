@@ -45,6 +45,7 @@ import {
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
 import { aiFillResultSchema, aiProviderSchema } from "../shared/aiForms.js";
 import { resolveAiYears } from "../shared/aiDates.js";
+import { resetPasswordBodySchema } from "../shared/inviteForms.js";
 import {
   applyToPost,
   cancelApplication,
@@ -886,13 +887,39 @@ export async function registerRoutes(
     res.json(await listTeachers());
   });
 
+  /**
+   * 교사 비밀번호 재설정. **아이디 방식의 유일한 복구 수단이다** — 지우지 말 것
+   * (`shared/teacherId.ts` 참고).
+   *
+   * `password` 를 비우면 서버가 무작위로 만들어 한 번만 보여준다. 넣으면 그 값으로
+   * 바꾸고 **응답에는 담지 않는다.**
+   *
+   * `requireAdmin()` 이라 역할만 본다. **admin 끼리 서로의 비밀번호를 바꿀 수 있고
+   * 자기 자신도 대상이 된다.** 그대로 둔 것이다 — admin 이 둘 이상일 때 한 명이
+   * 잊어도 다른 한 명이 풀어줄 수 있는 유일한 길이다.
+   */
   app.post(api.teachers.resetPassword.path, requireAdmin(), async (req, res) => {
     const id = String(req.params.id);
-    const result = await resetTeacherPassword(id);
+
+    // **여기서 반드시 검사한다.** 화면 검사는 우회할 수 있고, Supabase 쪽 최소
+    // 길이는 6자라서 그냥 넘기면 6자 비밀번호가 들어간다.
+    let password: string | undefined;
+    try {
+      password = resetPasswordBodySchema.parse(req.body ?? {}).password;
+    } catch (err) {
+      if (err instanceof z.ZodError) {
+        // 입력값은 담지 않는다. 비밀번호가 오류 응답에 섞이면 안 된다.
+        return res.status(400).json({ message: err.errors[0].message, field: "password" });
+      }
+      throw err;
+    }
+
+    const result = await resetTeacherPassword(id, password);
     if (!result.ok) {
       return res.status(result.status).json({ message: result.message });
     }
     // 임시 비밀번호가 실리는 유일한 응답이다. 다시 볼 수 없다.
+    // 관리자가 직접 지정한 경우에는 `null` 이다.
     res.json({ loginId: result.loginId, tempPassword: result.tempPassword });
   });
 
