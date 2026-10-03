@@ -131,27 +131,39 @@ Groq·Gemini 두 개다. 키는 브라우저가 아니라 서버 DB 에 암호�
       컬럼 7개 · PK · FK 2개 · `CHECK (id = 1)` · RLS 켜짐·정책 0개 확인.
       `anon`·`authenticated` 권한은 회수했다 (다른 테이블보다 엄격하다).
 
-### 실제 키로 확인해야 하는 것 (5단계 시작 전)
+### 실제 키로 확인한 결과 (2026-10-03)
 
-`server/aiProviders.ts` 의 `callGroq` · `callGemini` 는 **아직 막혀 있다**
-(`NotVerifiedError`). 아래를 확인한 뒤 몸통을 채운다. 파일에도 `확인 전` 으로 적혀 있다.
+문서가 아니라 **실제 호출로 확정했다.** 문서만 믿었으면 두 군데서 틀렸다.
 
-- [ ] **Gemini 의 JSON 스키마 강제 필드 이름.** 문서가 `/v1beta/interactions` 에
-      `response_format: {type, mime_type, schema}` 를 쓰는 형태를 보여주는데,
-      예전 `generateContent` + `generationConfig.responseSchema` 와 다르다.
-      실제 요청 한 번으로 확정한다.
-- [ ] **이미지를 공개 URL 로 넘기는 정확한 필드.** 문서는 URL 을 지원한다고 하지만
-      SDK 가 대신 내려받는 것인지 API 가 직접 가져가는 것인지가 불분명하다.
-      **API 가 직접 가져간다면 용량을 미리 막을 수 없으므로**, Storage 에 `HEAD` 를
-      먼저 보내 `content-length` 로 상한(`MAX_IMAGE_BYTES`, 5MB)을 건다.
-      안 되면 inline base64 로 폴백한다 (요청 전체 20MB 한도 안에서).
-- [ ] **기본 Flash 모델 확정.** 지금 상수는 `gemini-3.5-flash` 다. 비용·한도를 보고
-      정하고, `gemini-2.0-flash`(종료)·`gemini-2.5-flash`(접근 제한)는 쓰지 않는다.
-- [ ] **Groq 비전 모델이 아직 Preview 인지 재확인.** Preview 면 이미지 모드의
-      기본 공급자를 Gemini 로 두는 현재 설정을 유지한다 (`PROVIDER_ORDER`).
-- [ ] 한국어 포스터 3~4장으로 Groq·Gemini 결과 비교 → `PROVIDER_ORDER` 조정
+- [x] **Gemini JSON 스키마 강제** — `POST /v1beta/models/<model>:generateContent` +
+      `generationConfig.responseMimeType` + `responseSchema`. **이게 맞다.**
+      문서가 보여주던 `/v1beta/interactions` + `response_format` 은 200 은 오지만
+      우리가 요구한 항목이 하나도 담기지 않았다.
+- [x] **이미지 전달** — 두 공급자 모두 **공개 URL 을 그대로** 받는다.
+      Gemini 는 `file_data.file_uri`, Groq 은 `image_url.url`.
+      base64 와 걸린 시간이 거의 같아서 URL 쪽을 쓴다 — 바이트가 우리 함수를
+      거치지 않고 Supabase(서울)에서 바로 간다.
+      Groq 은 base64 로 816KB 포스터를 보내자 **TPM 8000 한도에 걸려 429** 가 났다.
+- [x] **용량 확인** — Supabase 는 HEAD 에 `content-length` 를 준다 (206 Range 도 됨).
+      **아무 CDN 에나 통하는 방법이 아니다** — 같은 날 어떤 뉴스 CDN 은 HEAD 에 404,
+      GET 에 200 을 줬다. 허용 도메인을 우리 Supabase 로 묶어 둔 것이 그래서 중요하다.
+      크기를 알 수 없으면 거부한다(막는 쪽으로 실패).
+- [x] **Groq 모델** — 문서의 Production 목록에 있던 `llama-3.3-70b-versatile` 는
+      이 계정에서 **404** 다. `GET /openai/v1/models` 로 확인했다.
+      텍스트는 `openai/gpt-oss-120b`(Production), 비전은 `qwen/qwen3.8-27b` 하나뿐이고
+      **여전히 Preview** 다.
+- [x] **Gemini 모델** — `gemini-3.1-flash-lite` 로 확정. 포스터 2장 x 6회에서
+      9/9 다섯 번, 8/9 한 번, 1.5~2.6초. `gemini-3.8-flash` 는 503 을 한 번 냈고
+      2~3배 느렸다. `gemini-flash-latest` 는 떠다니는 별칭이라 조용히 바뀌어서 뺐다.
+- [x] **공급자 순서 — 두 모드 모두 Gemini 우선.** Groq 은 **장소를 비우는 일이 잦다**
+      (다섯 번 중 네 번). 틀린 값이 아니라 빈칸이라 위험하진 않지만 교사가 매번
+      직접 쳐야 한다. 속도 차이는 0.5초 안쪽이라 정확도를 택했다.
+
+남은 것
 - [ ] 개인정보 안내 문구 확정 — `AiSettings.tsx` 아래쪽에 자리를 만들어 뒀다.
       공급자 약관을 확인한 뒤 채운다.
+- [ ] **포스터를 2장으로만 비교했다.** 실제 학교 포스터가 쌓이면 다시 잴 것.
+      특히 글자가 빽빽하거나 대비가 낮은 안내문에서 `flash-lite` 가 버티는지.
 
 측정·확인이 필요한 것
 - [x] **함수 시간 결론 (2026-10-02 조사)** — `maxDuration` 상향이 아니라

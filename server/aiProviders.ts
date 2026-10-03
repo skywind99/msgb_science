@@ -33,23 +33,42 @@ export const MODELS = {
     text: "openai/gpt-oss-120b", // Production, ctx 131k
     vision: "qwen/qwen3.8-27b", // Preview — 내려갈 수 있다
   },
+  // Gemini 선택 근거 (같은 포스터 2장, 9개 항목 채점, 2026-10-03)
+  //   gemini-3.1-flash-lite  9/9 x5, 8/9 x1   1.5~2.6초   <- 기본. 가장 빠르고 싸다
+  //   gemini-3.8-flash       9/9 x5, 503 x1   3.1~5.1초
+  //   gemini-3.5-flash       9/9 x2           4.7~7.6초
+  //   gemini-flash-latest    9/9 x2           4.0~7.8초   떠다니는 별칭이라 조용히 바뀐다
+  // 정확도가 비슷하면 빠르고 싼 쪽을 쓴다. 틀리면 Groq 로 넘어가고, 교사 화면이
+  // AI 가 채운 칸을 보라색으로 표시하므로 한 번 더 걸러진다.
+  // **포스터 2장으로만 비교했다.** 실제 학교 포스터가 쌓이면 다시 재 볼 것.
   gemini: {
-    // 확인 전 — Gemini 키가 등록되면 모델 목록을 찍어 안정판으로 확정한다.
-    // `gemini-2.0-flash` 는 종료, `gemini-2.5-flash` 는 접근 제한이다.
-    text: "gemini-3.5-flash",
-    vision: "gemini-3.5-flash",
+    text: "gemini-3.1-flash-lite",
+    vision: "gemini-3.1-flash-lite",
   },
 } as const;
 
 /**
  * 공급자 우선순위. **상수만 바꾸면 뒤집힌다.**
  *
- * 텍스트는 Groq 이 빠르고 모델이 Production 이라 먼저 본다.
- * 이미지는 Groq 의 비전 모델이 Preview 뿐이라 Gemini 를 먼저 본다.
- * 실제 한국어 포스터로 비교한 뒤 바꿀 수 있다.
+ * 2026-10-03 에 실제로 재 보고 **두 모드 모두 Gemini 를 앞에 뒀다.**
+ *
+ * | 자료 | Groq | Gemini |
+ * |---|---|---|
+ * | 포스터 P1 (여러 날·정원 없음) | 8/9 | 9/9 |
+ * | 포스터 P2 | 7/9 | 9/9 |
+ * | 안내문 A (천체관측) | 7/8 | 8/8 |
+ * | 안내문 B (진로특강) | 7/8 | 8/8 |
+ * | 안내문 C (실험교실) | 8/8 | 8/8 |
+ *
+ * Groq 은 **장소를 비우는 일이 잦다** — 다섯 번 중 네 번 그랬다. 틀린 값을 넣는
+ * 것이 아니라 빈칸이라 위험하진 않지만, 교사가 매번 장소를 직접 쳐야 한다.
+ * 속도 차이는 0.5초 안쪽이라 정확도를 택했다.
+ *
+ * Groq 을 뒤에 둬도 폴백은 그대로다 — Gemini 가 한도에 걸리면 자동으로 넘어간다.
+ * 모드별로 나눠 둔 구조는 유지한다. 나중에 한쪽만 바꿀 수 있어야 한다.
  */
 export const PROVIDER_ORDER: Record<"text" | "image", readonly AiProvider[]> = {
-  text: ["groq", "gemini"],
+  text: ["gemini", "groq"],
   image: ["gemini", "groq"],
 };
 
@@ -124,14 +143,6 @@ export class ProviderError extends Error {
   }
 }
 
-/** 아직 확인하지 못한 부분이 있어 호출을 막아 둔 표시. */
-export class NotVerifiedError extends Error {
-  constructor(readonly provider: AiProvider) {
-    super(`${provider} 호출 형식이 아직 확인되지 않았습니다.`);
-    this.name = "NotVerifiedError";
-  }
-}
-
 /** 공급자 하나를 부르는 함수. 테스트에서 가짜로 바꿔 끼울 수 있게 타입을 둔다. */
 export type ProviderCaller = (
   provider: AiProvider,
@@ -141,43 +152,195 @@ export type ProviderCaller = (
 ) => Promise<unknown>;
 
 /**
- * Groq 호출.
- *
- * **확인 전** — OpenAI 호환 `chat/completions` 에 `response_format:
- * {"type":"json_object"}` 를 쓰는 형태로 문서에 나와 있다. 이미지는 공개 URL 과
- * base64 둘 다 받는다(요청당 20MB, 이미지 3장). 실제 키로 한 번 찍어 보고
- * 요청 본문을 확정한다.
+ * 두 공급자에게 요구하는 응답 모양. Gemini 는 이걸로 강제하고,
+ * Groq 은 글로만 요구한 뒤 서버에서 `aiFillResultSchema` 로 다시 검증한다.
  */
-async function callGroq(
-  _key: string,
-  _input: ProviderInput,
-  _signal: AbortSignal
-): Promise<unknown> {
-  throw new NotVerifiedError("groq");
+const RESPONSE_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string", nullable: true },
+    body: { type: "string", nullable: true },
+    date: { type: "string", nullable: true },
+    endDate: { type: "string", nullable: true },
+    startTime: { type: "string", nullable: true },
+    endTime: { type: "string", nullable: true },
+    location: { type: "string", nullable: true },
+    capacity: { type: "integer", nullable: true },
+    applyStart: { type: "string", nullable: true },
+    applyDeadline: { type: "string", nullable: true },
+    applyNote: { type: "string", nullable: true },
+  },
+} as const;
+
+/**
+ * 지시문.
+ *
+ * "없으면 null" 을 거듭 적는 이유는 모델이 빈칸을 그럴듯한 값으로 채우려 하기
+ * 때문이다. 교사가 확인하지 않고 저장하면 틀린 날짜가 공지로 나간다.
+ *
+ * 행사 일시와 신청 기간을 구분하라는 문장도 반드시 있어야 한다 — 포스터에
+ * 신청 기간이 없으면 행사 날짜를 그리로 옮겨 적으려는 경향이 있다.
+ */
+function instruction(mode: AiFillMode, today: string): string {
+  const lines = [
+    "학교·기관 활동 안내에서 아래 항목을 뽑아 JSON 으로만 답하세요.",
+    "글에 없는 값은 반드시 null 로 두세요. 절대 추측하지 마세요.",
+    "date 는 시작 날짜 YYYY-MM-DD, endDate 는 여러 날 행사일 때의 종료 날짜(아니면 null).",
+    "startTime·endTime 은 HH:MM (24시간).",
+    "applyStart·applyDeadline 은 **신청 접수 기간**이며 YYYY-MM-DDTHH:MM 입니다.",
+    "행사 일시와 신청 기간은 다릅니다. 신청 기간이 적혀 있지 않으면 둘 다 null 입니다.",
+    "신청 기간에 시각이 없으면 시작은 00:00, 마감은 23:59 로 하세요.",
+    `연도가 적혀 있지 않으면 오늘(${today}) 의 연도를 쓰세요.`,
+    "capacity 는 모집 인원 숫자만. '누구나' 처럼 인원 제한이 없으면 null.",
+    "title 은 행사 이름만.",
+    mode === "image"
+      ? "body 에는 안내문의 설명을 2~3줄로 간추려 넣으세요."
+      : "body 는 null 로 두세요. 본문은 이미 교사가 쓴 것입니다.",
+  ];
+  return lines.join(" ");
+}
+
+/** 모델이 코드 울타리를 붙이는 경우가 있어 벗겨낸다. */
+function parseJson(text: string): unknown {
+  const fence = /^```(?:json)?\s*|\s*```$/gi;
+  try {
+    return JSON.parse(text.trim().replace(fence, "").trim());
+  } catch {
+    throw new ProviderError("bad_response", "JSON 으로 읽을 수 없음");
+  }
+}
+
+/** HTTP 오류를 분류로 옮긴다. 응답 본문은 로그에도 남기지 않는다. */
+function errorFor(status: number): ProviderError {
+  return new ProviderError(codeForStatus(status), `HTTP ${status}`);
 }
 
 /**
- * Gemini 호출.
+ * 이미지 용량을 **보내기 전에** 확인한다.
  *
- * **확인 전 — 두 가지가 남았다.**
- * 1. JSON 스키마를 강제하는 필드 이름. 문서가 `/v1beta/interactions` 에
- *    `response_format: {type, mime_type, schema}` 를 쓰는 형태를 보여주는데,
- *    예전 `generateContent` + `generationConfig.responseSchema` 와 다르다.
- * 2. 이미지를 공개 URL 로 넘기는 정확한 필드. 문서는 URL 을 지원한다고 하지만
- *    SDK 가 대신 내려받는 것인지 API 가 직접 가져가는 것인지가 불분명하다.
- *    **API 가 직접 가져간다면 용량을 미리 막을 수 없으므로**, Storage 에 HEAD 를
- *    먼저 보내 `content-length` 로 `MAX_IMAGE_BYTES` 를 거는 쪽으로 간다.
- *    안 되면 inline base64 로 폴백한다.
+ * 공급자가 URL 을 직접 가져가므로 우리는 바이트를 보지 않는다. 그래서 미리 막아야 한다.
+ * Supabase Storage 는 HEAD 에 `content-length` 를 준다 (2026-10-03 확인).
+ *
+ * **아무 CDN 에나 통하는 방법이 아니다.** 같은 날 어떤 뉴스 CDN 은 HEAD 에 404,
+ * GET 에 200 을 줬다. 허용 도메인을 우리 Supabase 로 묶어 두는 것이 그래서 중요하다.
+ * 크기를 알 수 없으면 통과시키지 않는다 — 막는 쪽으로 실패한다.
  */
-async function callGemini(
-  _key: string,
-  _input: ProviderInput,
-  _signal: AbortSignal
-): Promise<unknown> {
-  throw new NotVerifiedError("gemini");
+export async function checkImageSize(
+  url: string,
+  signal?: AbortSignal
+): Promise<{ ok: true; bytes: number } | { ok: false; reason: string }> {
+  try {
+    const res = await fetch(url, { method: "HEAD", signal });
+    if (!res.ok) return { ok: false, reason: `HEAD ${res.status}` };
+
+    const type = res.headers.get("content-type") ?? "";
+    if (!type.startsWith("image/")) return { ok: false, reason: "이미지가 아님" };
+
+    const len = Number(res.headers.get("content-length"));
+    if (!Number.isFinite(len) || len <= 0) return { ok: false, reason: "크기를 알 수 없음" };
+    if (len > MAX_IMAGE_BYTES) return { ok: false, reason: "용량 초과" };
+
+    return { ok: true, bytes: len };
+  } catch {
+    return { ok: false, reason: "확인 실패" };
+  }
 }
 
-/** 기본 호출자. 5단계에서 위 두 함수의 몸통을 채운다. */
+/**
+ * Groq — OpenAI 호환 `chat/completions`.
+ *
+ * 이미지는 `image_url` 로 **공개 URL 을 그대로** 넘긴다. base64 도 되지만
+ * 무료 등급의 분당 토큰 한도(TPM 8000)를 금방 넘긴다 — 816KB 포스터 한 장을
+ * base64 로 보냈더니 실제로 429 가 났다.
+ */
+async function callGroq(
+  key: string,
+  input: ProviderInput,
+  signal: AbortSignal
+): Promise<unknown> {
+  const isImage = input.mode === "image";
+  const content = isImage
+    ? [
+        { type: "text", text: instruction("image", input.today) },
+        { type: "image_url", image_url: { url: input.imageUrl } },
+      ]
+    : `${instruction("text", input.today)}\n\n${input.text ?? ""}`;
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: isImage ? MODELS.groq.vision : MODELS.groq.text,
+      messages: [{ role: "user", content }],
+      response_format: { type: "json_object" },
+      temperature: 0,
+    }),
+    signal,
+  });
+  if (!res.ok) throw errorFor(res.status);
+
+  const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  const text = body.choices?.[0]?.message?.content;
+  if (!text) throw new ProviderError("bad_response", "응답에 본문이 없음");
+  return parseJson(text);
+}
+
+/**
+ * Gemini — `generateContent` + `generationConfig.responseSchema`.
+ *
+ * **이 형태가 맞다.** 문서가 보여주던 `/v1beta/interactions` + `response_format`
+ * 쪽도 찔러 봤는데, 200 은 오지만 우리가 요구한 항목이 하나도 담기지 않았다.
+ * 2026-10-03 에 실제 호출로 확인했다. 문서만 보고 고르면 안 된다.
+ *
+ * 이미지는 `file_data.file_uri` 로 공개 URL 을 그대로 넘긴다. 바이트가 우리
+ * 함수를 거치지 않으므로 Supabase(서울)에서 바로 가져간다. base64 와 걸린 시간이
+ * 거의 같았고, 용량은 `checkImageSize` 로 미리 막는다.
+ *
+ * 키를 쿼리스트링이 아니라 헤더로 보낸다. URL 은 로그에 남기 쉽다.
+ */
+async function callGemini(
+  key: string,
+  input: ProviderInput,
+  signal: AbortSignal
+): Promise<unknown> {
+  const isImage = input.mode === "image";
+  const model = isImage ? MODELS.gemini.vision : MODELS.gemini.text;
+
+  const parts: Array<Record<string, unknown>> = [
+    { text: instruction(input.mode, input.today) },
+  ];
+  if (isImage) {
+    parts.push({ file_data: { mime_type: "image/jpeg", file_uri: input.imageUrl } });
+  } else {
+    parts.push({ text: input.text ?? "" });
+  }
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: { "x-goog-api-key": key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: "application/json",
+          responseSchema: RESPONSE_SCHEMA,
+        },
+      }),
+      signal,
+    }
+  );
+  if (!res.ok) throw errorFor(res.status);
+
+  const body = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const text = body.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new ProviderError("bad_response", "응답에 본문이 없음");
+  return parseJson(text);
+}
+
+/** 기본 호출자. 테스트에서는 가짜로 바꿔 끼운다. */
 export const defaultCaller: ProviderCaller = (provider, key, input, signal) =>
   provider === "groq" ? callGroq(key, input, signal) : callGemini(key, input, signal);
 
@@ -252,8 +415,6 @@ export async function callWithFallback(
 /** 예외를 오류 분류로 옮긴다. **메시지에 키나 요청 내용이 섞이지 않게 한다.** */
 function classify(err: unknown): { code: AiFillErrorCode; reason: string } {
   if (err instanceof ProviderError) return { code: err.code, reason: err.reason };
-  if (err instanceof NotVerifiedError)
-    return { code: "bad_response", reason: "호출 형식 확인 전" };
   if (err instanceof Error && err.name === "AbortError")
     return { code: "bad_response", reason: "타임아웃" };
   return { code: "bad_response", reason: "알 수 없는 오류" };

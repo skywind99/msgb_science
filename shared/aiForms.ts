@@ -47,3 +47,61 @@ export const aiFillRequestSchema = z
   });
 
 export type AiFillRequest = z.infer<typeof aiFillRequestSchema>;
+
+/**
+ * AI 가 돌려주는 결과. **서버가 공급자 응답을 이 스키마로 다시 검증한다.**
+ *
+ * Gemini 는 `responseSchema` 로 모양을 강제할 수 있지만 Groq 은 "JSON 으로 답하라"
+ * 수준이라, 두 쪽 모두 믿지 않고 여기서 한 번 더 거른다.
+ *
+ * 모든 항목이 선택이다. **글에 없는 값은 비워야 하고, 추측은 틀린 답이다.**
+ */
+const trimmed = (max: number) =>
+  z.preprocess(
+    (v) => (typeof v === "string" ? v.trim() || null : v ?? null),
+    z.string().max(max).nullable()
+  );
+
+/** "2026-11-07" */
+const dateOnly = z.preprocess(
+  (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v.trim()) ? v.trim() : null),
+  z.string().nullable()
+);
+
+/** "14:00" — 한 자리 시(9:00)도 받아 두 자리로 맞춘다. */
+const timeOnly = z.preprocess((v) => {
+  if (typeof v !== "string") return null;
+  const m = v.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  if (h > 23 || Number(m[2]) > 59) return null;
+  return `${String(h).padStart(2, "0")}:${m[2]}`;
+}, z.string().nullable());
+
+/** "2026-10-26T00:00" */
+const localDateTime = z.preprocess(
+  (v) =>
+    typeof v === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v.trim())
+      ? v.trim()
+      : null,
+  z.string().nullable()
+);
+
+export const aiFillResultSchema = z.object({
+  title: trimmed(200),
+  body: trimmed(2000),
+  date: dateOnly,
+  endDate: dateOnly,
+  startTime: timeOnly,
+  endTime: timeOnly,
+  location: trimmed(100),
+  capacity: z.preprocess((v) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number(v.trim()) : NaN;
+    return Number.isInteger(n) && n >= 1 && n <= 1000 ? n : null;
+  }, z.number().int().nullable()),
+  applyStart: localDateTime,
+  applyDeadline: localDateTime,
+  applyNote: trimmed(500),
+});
+
+export type AiFillResult = z.infer<typeof aiFillResultSchema>;

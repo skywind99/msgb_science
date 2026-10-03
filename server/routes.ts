@@ -26,6 +26,7 @@ import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
 import {
   callWithFallback,
+  checkImageSize,
   isAllowedImageUrl,
   todayInKst,
   type AiFillMode,
@@ -40,7 +41,7 @@ import {
   resetTeacherPassword,
 } from "./invites.js";
 import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
-import { aiProviderSchema } from "../shared/aiForms.js";
+import { aiFillResultSchema, aiProviderSchema } from "../shared/aiForms.js";
 import {
   applyToPost,
   cancelApplication,
@@ -892,8 +893,16 @@ export async function registerRoutes(
 
     const mode: AiFillMode = input.imageUrl ? "image" : "text";
 
-    if (mode === "image" && !isAllowedImageUrl(input.imageUrl!)) {
-      return aiError(res, 400, "image_rejected");
+    if (mode === "image") {
+      // 공급자가 URL 을 직접 가져가므로 우리가 바이트를 보지 않는다.
+      // 그래서 도메인과 용량을 **보내기 전에** 막는다.
+      if (!isAllowedImageUrl(input.imageUrl!)) return aiError(res, 400, "image_rejected");
+
+      const size = await checkImageSize(input.imageUrl!);
+      if (!size.ok) {
+        console.error(`[ai/fill] 이미지 거부: ${size.reason}`);
+        return aiError(res, 400, "image_rejected");
+      }
     }
 
     // 쓸 수 있는 키만 모은다. 하나만 등록돼 있어도 동작해야 한다.
@@ -921,7 +930,16 @@ export async function registerRoutes(
       return aiError(res, result.code === "rate_limited" ? 429 : 502, result.code);
     }
 
-    res.json(result.data);
+    // **공급자 응답을 믿지 않는다.** Gemini 는 스키마로 모양을 강제할 수 있지만
+    // Groq 은 "JSON 으로 답하라" 수준이고, 둘 다 형식이 어긋난 값을 낼 수 있다.
+    // 여기서 거르지 않으면 "2026년 봄" 같은 문자열이 날짜 칸으로 들어간다.
+    const checked = aiFillResultSchema.safeParse(result.data);
+    if (!checked.success) {
+      console.error(`[ai/fill] ${result.provider} 응답 형식 오류`);
+      return aiError(res, 502, "bad_response");
+    }
+
+    res.json(checked.data);
   });
 
   // ── 교사용 신청자 명단 ───────────────────────────────────
