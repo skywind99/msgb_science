@@ -91,6 +91,29 @@ export async function hitLimit(
   }
 }
 
+/**
+ * 센 것을 하나 되돌린다.
+ *
+ * 왜 "세고 나서 되돌리기" 인가: 먼저 세지 않으면 동시 요청이 한꺼번에 통과해
+ * 한도를 넘는다. 그래서 **들어올 때 세고, 실제로 일이 일어나지 않았을 때만**
+ * 되돌린다. 되돌리기가 늦어도 한도를 넘기지는 못한다.
+ *
+ * 창(window)은 건드리지 않는다. 시간이 지나면 어차피 초기화된다.
+ * 0 밑으로는 내려가지 않는다.
+ */
+export async function refundLimit(key: string): Promise<void> {
+  try {
+    await db.execute(sql`
+      update rate_limits
+         set count = greatest(0, count - 1)
+       where key = ${hashKey(key)}
+    `);
+  } catch (err) {
+    // 되돌리지 못해도 창이 지나면 초기화된다. 요청을 실패시킬 이유는 없다.
+    console.error("[rateLimit] 되돌리기 실패:", err);
+  }
+}
+
 /** 정상 처리된 뒤 실패 카운터를 지운다. 코드를 맞힌 학생이 다음에 막히지 않게. */
 export async function resetLimit(key: string): Promise<void> {
   try {

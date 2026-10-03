@@ -59,6 +59,7 @@ import {
   hitLimit,
   LIMITS,
   pruneRateLimits,
+  refundLimit,
   resetLimit,
   type LimitResult,
 } from "./rateLimit.js";
@@ -180,6 +181,35 @@ function badRequest(res: Response, err: unknown) {
  */
 function aiError(res: Response, status: number, code: AiFillErrorCode) {
   return res.status(status).json({ code, message: AI_FILL_MESSAGES[code] });
+}
+
+/** 공급자 이름을 사람이 읽는 말로. 교사가 "Groq" 을 몰라도 어디가 막혔는지 보인다. */
+const PROVIDER_LABEL: Record<AiProvider, string> = { groq: "Groq", gemini: "Gemini" };
+
+/**
+ * 공급자가 한도를 돌려줬을 때.
+ *
+ * **우리 시간당 20회 제한과 문구가 겹치면 안 된다.** 그쪽은
+ * "요청이 너무 많습니다. N초 후에…" 이고, 이쪽은 "AI 사용량이 한도를 넘었어요" 다.
+ * 둘 다 429 라서 문구가 유일한 구분점이다.
+ *
+ * 대기 시간이 아주 길면 초 단위로 알려 줘야 소용이 없다. 분·시간으로 세는 대신
+ * "오늘은 다 썼다" 로 바꾼다 — 교사가 기다릴지 포기할지 바로 정할 수 있다.
+ */
+const LONG_WAIT_SEC = 10 * 60;
+
+function providerRateLimited(res: Response, provider: AiProvider, retryAfterSec?: number) {
+  const who = PROVIDER_LABEL[provider];
+  const message =
+    retryAfterSec === undefined
+      ? `AI 사용량이 한도를 넘었어요 (${who}). 잠시 후 다시 시도해 주세요.`
+      : retryAfterSec > LONG_WAIT_SEC
+        ? `오늘은 AI 사용량을 다 썼어요 (${who}). 내일 다시 시도해 주세요.`
+        : `AI 사용량이 한도를 넘었어요 (${who}). 약 ${retryAfterSec}초 후에 다시 시도해 주세요.`;
+
+  if (retryAfterSec !== undefined) res.setHeader("Retry-After", String(retryAfterSec));
+  // **키와 요청 내용은 담지 않는다.** 공급자 이름과 초만 나간다.
+  return res.status(429).json({ code: "rate_limited", message, provider, retryAfter: retryAfterSec });
 }
 
 /**
@@ -881,13 +911,28 @@ export async function registerRoutes(
     const user = await ensureAuth(req, res);
     if (!user) return;
 
-    const gate = await hitLimit(`ai:${user.id}`, LIMITS.aiFill.limit, LIMITS.aiFill.windowSec);
+    /**
+     * **먼저 세고, 공급자를 부르지 않았으면 되돌린다.**
+     *
+     * 세는 목적은 비용과 남용을 막는 것이다. 공급자에 닿지도 않은 요청은 비용이
+     * 0 이므로 깎을 이유가 없다. 특히 공급자가 429 를 준 경우에 우리 한도까지
+     * 같이 소진하면, 공급자가 풀려도 교사가 우리 쪽에 막힌다.
+     *
+     * 순서를 뒤집어 "부른 뒤에 센다" 로 하면 동시 요청이 한꺼번에 통과해 한도를
+     * 넘는다. 그래서 세는 것이 먼저다.
+     */
+    const limitKey = `ai:${user.id}`;
+    const gate = await hitLimit(limitKey, LIMITS.aiFill.limit, LIMITS.aiFill.windowSec);
     if (!gate.ok) return tooManyRequests(res, gate);
+
+    /** 공급자를 부르지 않았거나 공급자가 한도를 돌려준 경우. 센 것을 물린다. */
+    const refund = () => refundLimit(limitKey);
 
     let input;
     try {
       input = api.ai.fill.input.parse(req.body);
     } catch (err) {
+      await refund();
       return badRequest(res, err);
     }
 
@@ -896,11 +941,15 @@ export async function registerRoutes(
     if (mode === "image") {
       // 공급자가 URL 을 직접 가져가므로 우리가 바이트를 보지 않는다.
       // 그래서 도메인과 용량을 **보내기 전에** 막는다.
-      if (!isAllowedImageUrl(input.imageUrl!)) return aiError(res, 400, "image_rejected");
+      if (!isAllowedImageUrl(input.imageUrl!)) {
+        await refund();
+        return aiError(res, 400, "image_rejected");
+      }
 
       const size = await checkImageSize(input.imageUrl!);
       if (!size.ok) {
         console.error(`[ai/fill] 이미지 거부: ${size.reason}`);
+        await refund();
         return aiError(res, 400, "image_rejected");
       }
     }
@@ -914,6 +963,7 @@ export async function registerRoutes(
     if (Object.keys(keys).length === 0) {
       // "등록되지 않음" 과 "읽을 수 없음" 을 구분해 알려준다.
       const unreadable = groq.state === "unreadable" || gemini.state === "unreadable";
+      await refund();
       return aiError(res, 503, unreadable ? "key_unreadable" : "key_missing");
     }
 
@@ -927,7 +977,13 @@ export async function registerRoutes(
     if (!result.ok) {
       // 사유는 로그에만. 요청 내용과 키는 남기지 않는다.
       console.error(`[ai/fill] ${result.provider} 실패: ${result.reason}`);
-      return aiError(res, result.code === "rate_limited" ? 429 : 502, result.code);
+      if (result.code === "rate_limited") {
+        // 공급자가 거절해 아무 일도 일어나지 않았다. 우리 한도까지 깎지 않는다.
+        await refund();
+        return providerRateLimited(res, result.provider, result.retryAfterSec);
+      }
+      // bad_response · model_gone · key_rejected 는 실제로 불렀으므로 센 채로 둔다.
+      return aiError(res, 502, result.code);
     }
 
     // **공급자 응답을 믿지 않는다.** Gemini 는 스키마로 모양을 강제할 수 있지만

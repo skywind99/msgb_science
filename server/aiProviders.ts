@@ -131,7 +131,9 @@ export class ProviderError extends Error {
   constructor(
     readonly code: AiFillErrorCode,
     /** 로그에 남겨도 되는 짧은 사유. **키나 요청 내용을 넣지 말 것.** */
-    readonly reason: string
+    readonly reason: string,
+    /** 공급자가 알려준 재시도 대기 시간(초). 모르면 undefined. */
+    readonly retryAfterSec?: number
   ) {
     super(reason);
     this.name = "ProviderError";
@@ -205,9 +207,42 @@ function parseJson(text: string): unknown {
   }
 }
 
+/**
+ * 공급자가 알려주는 재시도 대기 시간을 초로 읽는다.
+ *
+ * 두 공급자가 서로 다른 곳에 담는다.
+ *  - Groq: `retry-after` 헤더 (초 또는 HTTP 날짜)
+ *  - Gemini: 오류 본문의 `error.details[]` 안 `RetryInfo.retryDelay` ("31s")
+ *
+ * **본문에서 꺼내는 것은 숫자 하나뿐이다.** 메시지나 다른 필드는 쓰지 않는다 —
+ * 응답 전문이 로그나 화면으로 새지 않게.
+ */
+function retryAfterFrom(res: Response, body: string): number | undefined {
+  const header = res.headers.get("retry-after");
+  if (header) {
+    const asNumber = Number(header);
+    if (Number.isFinite(asNumber) && asNumber >= 0) return Math.ceil(asNumber);
+    const asDate = Date.parse(header);
+    if (Number.isFinite(asDate)) {
+      return Math.max(0, Math.ceil((asDate - Date.now()) / 1000));
+    }
+  }
+
+  // Gemini 쪽. 숫자만 꺼내고 본문은 버린다.
+  const match = body.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  if (match) return Math.ceil(Number(match[1]));
+
+  return undefined;
+}
+
 /** HTTP 오류를 분류로 옮긴다. 응답 본문은 로그에도 남기지 않는다. */
-function errorFor(status: number): ProviderError {
-  return new ProviderError(codeForStatus(status), `HTTP ${status}`);
+function errorFor(res: Response, body = ""): ProviderError {
+  const code = codeForStatus(res.status);
+  return new ProviderError(
+    code,
+    `HTTP ${res.status}`,
+    code === "rate_limited" ? retryAfterFrom(res, body) : undefined
+  );
 }
 
 /**
@@ -272,7 +307,7 @@ async function callGroq(
     }),
     signal,
   });
-  if (!res.ok) throw errorFor(res.status);
+  if (!res.ok) throw errorFor(res, await res.text().catch(() => ""));
 
   const body = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
   const text = body.choices?.[0]?.message?.content;
@@ -325,7 +360,7 @@ async function callGemini(
       signal,
     }
   );
-  if (!res.ok) throw errorFor(res.status);
+  if (!res.ok) throw errorFor(res, await res.text().catch(() => ""));
 
   const body = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
@@ -342,7 +377,14 @@ export const defaultCaller: ProviderCaller = (provider, key, input, signal) =>
 /** 폴백 한 번의 결과. */
 export type AttemptResult =
   | { ok: true; provider: AiProvider; data: unknown }
-  | { ok: false; provider: AiProvider; code: AiFillErrorCode; reason: string };
+  | {
+      ok: false;
+      provider: AiProvider;
+      code: AiFillErrorCode;
+      reason: string;
+      /** 공급자가 알려준 재시도 대기 시간(초). `rate_limited` 일 때만 있을 수 있다. */
+      retryAfterSec?: number;
+    };
 
 /**
  * 우선순위대로 부르고, 실패하면 다음 공급자로 넘긴다.
@@ -408,8 +450,13 @@ export async function callWithFallback(
 }
 
 /** 예외를 오류 분류로 옮긴다. **메시지에 키나 요청 내용이 섞이지 않게 한다.** */
-function classify(err: unknown): { code: AiFillErrorCode; reason: string } {
-  if (err instanceof ProviderError) return { code: err.code, reason: err.reason };
+function classify(err: unknown): {
+  code: AiFillErrorCode;
+  reason: string;
+  retryAfterSec?: number;
+} {
+  if (err instanceof ProviderError)
+    return { code: err.code, reason: err.reason, retryAfterSec: err.retryAfterSec };
   if (err instanceof Error && err.name === "AbortError")
     return { code: "bad_response", reason: "타임아웃" };
   return { code: "bad_response", reason: "알 수 없는 오류" };
