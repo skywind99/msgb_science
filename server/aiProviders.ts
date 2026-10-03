@@ -35,16 +35,23 @@ export const MODELS = {
     vision: "qwen/qwen3.8-27b", // Preview — 내려갈 수 있다
   },
   // Gemini 선택 근거 (같은 포스터 2장, 9개 항목 채점, 2026-10-03)
-  //   gemini-3.1-flash-lite  9/9 x5, 8/9 x1   1.5~2.6초   <- 기본. 가장 빠르고 싸다
-  //   gemini-3.8-flash       9/9 x5, 503 x1   3.1~5.1초
-  //   gemini-3.5-flash       9/9 x2           4.7~7.6초
-  //   gemini-flash-latest    9/9 x2           4.0~7.8초   떠다니는 별칭이라 조용히 바뀐다
-  // 정확도가 비슷하면 빠르고 싼 쪽을 쓴다. 틀리면 Groq 로 넘어가고, 교사 화면이
-  // AI 가 채운 칸을 보라색으로 표시하므로 한 번 더 걸러진다.
+  //   모델                   정확도          속도        종료 예정일
+  //   gemini-3.8-flash       9/9 x5, 503 x1  3.1~5.1초   없음        <- 기본
+  //   gemini-3.5-flash       9/9 x2          4.7~7.6초   없음
+  //   gemini-3.1-flash-lite  9/9 x5, 8/9 x1  1.5~2.6초   2027-05-07
+  //   gemini-flash-latest    9/9 x2          4.0~7.8초   (떠다니는 별칭)
+  //
+  // **속도가 아니라 수명을 기준으로 골랐다.** flash-lite 가 2~3배 빠르지만
+  // 공식 폐기 목록에 2027-05-07 이 **최소** 종료일로 적혀 있다. 학교 사이트는
+  // 손이 자주 가지 않으므로, 어느 날 404(`model_gone`)로 조용히 멈추는 쪽이
+  // 1~3초 느린 것보다 나쁘다. 3.8 과 3.5 는 종료일이 공지돼 있지 않다.
+  //
+  // 속도가 더 급해지면 flash-lite 로 한 줄만 바꾸면 된다. 그때는 2027-05-07 을
+  // 달력에 적어 둘 것. `gemini-flash-latest` 는 조용히 바뀌어서 제외했다.
   // **포스터 2장으로만 비교했다.** 실제 학교 포스터가 쌓이면 다시 재 볼 것.
   gemini: {
-    text: "gemini-3.1-flash-lite",
-    vision: "gemini-3.1-flash-lite",
+    text: "gemini-3.8-flash",
+    vision: "gemini-3.8-flash",
   },
 } as const;
 
