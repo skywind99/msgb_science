@@ -223,6 +223,41 @@ export function applyAiDates(
 }
 
 /**
+ * AI 가 채운 활동 칸만 비운다. **사용자가 넣거나 고친 값은 건드리지 않는다.**
+ *
+ * 판정 기준을 새로 만들지 않았다. `aiFilled` 그대로다 — 사용자가 고치는 순간
+ * 그 칸이 집합에서 빠지므로, 여기 들어오는 것은 AI 가 넣고 그대로 둔 값뿐이다.
+ *
+ * 신청 받기 토글은 **AI 가 켰고 활동 칸이 모두 빈 경우에만** 끈다.
+ *  - 사용자가 미리 켜 뒀으면(`aiEnabledApply` 가 false) 그대로 켜 둔다
+ *  - 사용자가 직접 넣은 장소 한 줄이라도 남아 있으면 끄지 않는다.
+ *    끄면 그 값이 화면에서 사라져 지워진 것처럼 보인다
+ *
+ * 화면에 쓰는 함수지만 순수 함수로 둔 이유는 시험할 수 있어야 하기 때문이다.
+ * 잘못 지우면 교사가 쓴 내용이 돌아오지 않는다.
+ */
+export function clearAiFields(
+  value: ActivityPanelDraft,
+  aiFilled: ReadonlySet<AiFilledField>,
+  aiEnabledApply: boolean
+): ActivityPanelDraft {
+  const next = { ...value };
+
+  AI_FILLED_FIELDS.forEach((f) => {
+    if (aiFilled.has(f)) next[f] = "";
+  });
+  // `endDate` 가 AI 것이었다면 `multiDay` 도 AI 가 켠 것이다. 같이 되돌린다.
+  if (aiFilled.has("endDate")) {
+    next.multiDay = false;
+    next.endDate = "";
+  }
+
+  if (aiEnabledApply && AI_FILLED_FIELDS.every((f) => !next[f])) next.applyEnabled = false;
+
+  return next;
+}
+
+/**
  * "신청 기간 시각은 00:00·23:59 로 넣었다" 는 안내를 띄울지.
  *
  * 그 문장은 **AI 가 실제로 그렇게 채웠을 때만** 쓸모가 있다. 신청 기간이 비어

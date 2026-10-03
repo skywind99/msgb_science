@@ -21,13 +21,14 @@ import { activityToPayload } from "@/components/ActivityFields";
 import {
   ActivityPanel,
   applyAiDates,
+  clearAiFields,
   emptyActivityPanel,
   panelToDraft,
   type ActivityPanelDraft,
   type AiFilledField,
 } from "@/components/ActivityPanel";
 import { errorMessage, fetchAiStatus, readImage, readText } from "@/lib/aiFill";
-import { AiFillCard } from "@/components/AiFillCard";
+import { AiFillCard, type AiImageNotice } from "@/components/AiFillCard";
 import type { AiFillResult } from "@shared/aiForms";
 
 // 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
@@ -70,6 +71,30 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
    */
   const [aiBody, setAiBody] = useState<{ id: string; text: string } | null>(null);
   const [aiBusy, setAiBusy] = useState<"image" | "text" | null>(null);
+  /**
+   * AI 가 실제로 읽은 이미지 주소. 성공했을 때만 쓴다.
+   *
+   * `thumbnailUrl` 하나를 AI 카드와 대표 이미지 줄이 **같이 쓴다.** 그래서 "지금
+   * 올라와 있는 사진" 만 보면 AI 가 읽은 사진인지 알 수 없다. 읽은 주소를 따로
+   * 쥐고 맞춰 봐야 "AI가 읽었어요" 가 거짓이 되지 않는다.
+   */
+  const [aiReadImage, setAiReadImage] = useState("");
+  /**
+   * 주황 안내. **AI 카드에서 사진을 바꿨을 때만 세운다.**
+   *
+   * 두 입구가 같은 state 를 쓰므로 "사진이 달라졌는가" 로는 구분이 안 된다.
+   * 그래서 **누가 바꿨는가** 로 판정한다 — 대표 이미지 줄에서 바꾼 것은 썸네일을
+   * 고르는 일이고, AI 가 읽은 내용과 아무 상관이 없다. 그때 주황 안내가 뜨면
+   * 교사는 자기가 건드리지 않은 것을 경고받는다.
+   */
+  const [aiImageNotice, setAiImageNotice] = useState<AiImageNotice | null>(null);
+  /**
+   * 신청 받기를 **AI 가 켰는가.** 사용자가 직접 켠 것과 구분해야 한다.
+   *
+   * `applyAiDates` 는 활동 칸이 하나라도 채워지면 토글을 켠다. 지울 때 그걸
+   * 되돌리려면 "원래 꺼져 있었다" 는 사실이 필요하다.
+   */
+  const [aiEnabledApply, setAiEnabledApply] = useState(false);
 
   // 키가 등록돼 있는지. 다이얼로그를 열 때만 묻는다.
   const { data: aiStatus } = useQuery({
@@ -112,6 +137,9 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setAiTitleFilled(false);
     setAiBody(null);
     setAiBusy(null);
+    setAiReadImage("");
+    setAiImageNotice(null);
+    setAiEnabledApply(false);
     setAiStatusLine(null);
     setActivityErrors({});
   };
@@ -175,6 +203,8 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     const { next, filled } = applyAiDates(activity, result as never, aiFilled);
     setActivity(next);
     setAiFilled(new Set(filled));
+    // 꺼져 있던 토글이 켜졌으면 AI 가 켠 것이다. 사용자가 미리 켜 뒀으면 그대로 둔다.
+    if (!activity.applyEnabled && next.applyEnabled) setAiEnabledApply(true);
 
     return filled.length + (result.title ? 1 : 0) + (result.body ? 1 : 0);
   };
@@ -183,7 +213,10 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
    * 호출 한 번. **버튼을 눌렀을 때만 들어온다** — 올리기만 해서는 불리지 않는다.
    * 결과와 오류 모두 카드 상태 줄에 남긴다. 오류 문구는 AI_FILL_MESSAGES 그대로다.
    */
-  const runFill = async (mode: "image" | "text", call: () => Promise<AiFillResult>) => {
+  const runFill = async (
+    mode: "image" | "text",
+    call: () => Promise<AiFillResult>
+  ): Promise<boolean> => {
     setAiBusy(mode);
     setAiStatusLine(null);
     try {
@@ -195,18 +228,96 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
             ? "제목, 본문, 활동 정보를 채웠어요. 보라색 칸을 확인해 주세요."
             : "읽을 수 있는 정보가 없었어요. 직접 입력해 주세요.",
       });
+      return true;
     } catch (err) {
       setAiStatusLine({ kind: "error", message: errorMessage(err) });
+      return false;
     } finally {
       setAiBusy(null);
     }
   };
 
-  /** 올린 이미지 한 장을 읽는다. 카드에서 올린 것이라 늘 우리 스토리지에 있다. */
-  const runReadImage = () => runFill("image", () => readImage(thumbnailUrl, authHeaders));
+  /**
+   * 올린 이미지 한 장을 읽는다. 카드에서 올린 것이라 늘 우리 스토리지에 있다.
+   *
+   * **성공했을 때만** 읽은 주소를 갈아끼우고 안내를 내린다. 실패했는데 내리면
+   * 교사는 이전 사진의 값을 새 사진의 값으로 믿게 된다.
+   */
+  const runReadImage = async () => {
+    const url = thumbnailUrl;
+    if (await runFill("image", () => readImage(url, authHeaders))) {
+      setAiReadImage(url);
+      setAiImageNotice(null);
+    }
+  };
 
-  /** 붙여 넣은 **글자만** 보낸다. 이미지는 보내지 않는다. */
-  const runReadText = (text: string) => runFill("text", () => readText(text, authHeaders));
+  /**
+   * 붙여 넣은 **글자만** 보낸다. 이미지는 보내지 않는다.
+   *
+   * 그래서 `aiReadImage` 도, 이미지 안내도 건드리지 않는다. 글을 고치는 것은
+   * 이미지와 무관하므로 안내할 일이 없다.
+   */
+  const runReadText = async (text: string) => {
+    await runFill("text", () => readText(text, authHeaders));
+  };
+
+  /**
+   * 지울 AI 내용이 남아 있는가.
+   *
+   * 본문은 `aiBody` 가 있는 것만으로는 모른다 — 사용자가 고쳤으면 더 이상 AI 값이
+   * 아니므로 **블록과 맞춰 봐야** 한다. 제목과 활동 칸은 고치는 순간 표시가 풀린다.
+   */
+  const aiBodyIntact =
+    !!aiBody && blocks.some((b) => b.id === aiBody.id && b.value === aiBody.text);
+  const hasAiContent = aiTitleFilled || aiFilled.size > 0 || aiBodyIntact;
+
+  /**
+   * AI 카드에서 사진을 바꾸거나 지웠다.
+   *
+   * **값은 하나도 건드리지 않는다.** 알려 주기만 하고, 지울지 다시 읽을지는
+   * 교사가 버튼으로 고른다. 읽은 적이 없거나 지울 내용이 없으면 알릴 것도 없다.
+   */
+  const handleAiCardImage = (url: string) => {
+    setThumbnailUrl(url);
+    if (!aiReadImage || !hasAiContent) {
+      setAiImageNotice(null);
+      return;
+    }
+    if (!url) setAiImageNotice("cleared");
+    else if (url !== aiReadImage) setAiImageNotice("replaced");
+    else setAiImageNotice(null);
+  };
+
+  /**
+   * AI 가 채웠고 **사용자가 고치지 않은** 값만 지운다.
+   *
+   * 판정 기준을 새로 만들지 않았다. 이미 있는 세 가지를 그대로 쓴다 —
+   * 제목은 `aiTitleFilled`, 활동 칸은 `aiFilled`(고치면 그 칸만 빠진다),
+   * 본문은 `aiBody`(고치면 내용이 달라져 안 맞는다). 사용자가 입력하거나 고친
+   * 값은 어느 경로로도 여기 들어오지 않는다.
+   */
+  const clearAiFilled = () => {
+    if (aiTitleFilled) {
+      form.setValue("title", "");
+      setAiTitleFilled(false);
+    }
+
+    // 블록은 남기고 내용만 비운다 — 최소 1개 규칙과 순서를 흔들지 않기 위해서다.
+    if (aiBodyIntact && aiBody) {
+      setBlocks((prev) =>
+        prev.map((b) => (b.id === aiBody.id && b.value === aiBody.text ? { ...b, value: "" } : b))
+      );
+    }
+    setAiBody(null);
+
+    setActivity((prev) => clearAiFields(prev, aiFilled, aiEnabledApply));
+
+    setAiFilled(new Set());
+    setAiEnabledApply(false);
+    setAiImageNotice(null);
+    // "채웠어요" 가 더는 사실이 아니다.
+    setAiStatusLine(null);
+  };
 
   const onSubmit = (data: FormValues) => {
     const cleanedBlocks = toContentBlocks(blocks);
@@ -318,7 +429,12 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                   <AiFillCard
                     authHeaders={authHeaders}
                     imageUrl={thumbnailUrl}
-                    onImageChange={setThumbnailUrl}
+                    onImageChange={handleAiCardImage}
+                    readImageUrl={aiReadImage}
+                    notice={hasAiContent ? aiImageNotice : null}
+                    onReread={runReadImage}
+                    onClearAi={clearAiFilled}
+                    onDismissNotice={() => setAiImageNotice(null)}
                     onFillFromImage={runReadImage}
                     onFillFromText={runReadText}
                     busy={aiBusy}
