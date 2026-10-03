@@ -222,6 +222,23 @@ export function applyAiDates(
   return { next, filled };
 }
 
+/**
+ * "신청 기간 시각은 00:00·23:59 로 넣었다" 는 안내를 띄울지.
+ *
+ * 그 문장은 **AI 가 실제로 그렇게 채웠을 때만** 쓸모가 있다. 신청 기간이 비어
+ * 있는데도 보이면, 교사는 어디를 봐야 할지 알 수 없는 설명을 읽게 된다.
+ * 보라색이 풀린 칸(사용자가 고친 칸)은 더 이상 AI 가 넣은 값이 아니므로 센다.
+ */
+export function showsPeriodTimeNote(
+  value: Pick<ActivityPanelDraft, "applyStart" | "applyDeadline">,
+  aiFilled: ReadonlySet<AiFilledField> | undefined
+): boolean {
+  if (!aiFilled) return false;
+  const midnight = aiFilled.has("applyStart") && value.applyStart.endsWith("T00:00");
+  const endOfDay = aiFilled.has("applyDeadline") && value.applyDeadline.endsWith("T23:59");
+  return midnight || endOfDay;
+}
+
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
 function weekday(date: string): string {
@@ -385,7 +402,8 @@ export function ActivityPanel({
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 보라색 칸은 <strong>AI가 채운 값</strong>이에요. 꼭 확인해 주세요.
-                시각이 적혀 있지 않은 신청 기간은 00:00과 23:59로 넣었어요.
+                {showsPeriodTimeNote(value, aiFilled) &&
+                  " 시각이 적혀 있지 않은 신청 기간은 00:00과 23:59로 넣었어요."}
               </span>
             </p>
           )}
@@ -463,7 +481,7 @@ export function ActivityPanel({
                   type="text"
                   value={value.location}
                   onChange={(e) => set("location", e.target.value)}
-                  placeholder="제2과학실"
+                  placeholder="예: 제2과학실"
                   className={`${cls("location")} pl-8`}
                 />
               </div>
@@ -477,7 +495,7 @@ export function ActivityPanel({
                   max={1000}
                   value={value.capacity}
                   onChange={(e) => set("capacity", e.target.value)}
-                  placeholder="24"
+                  placeholder="제한 없음"
                   className={`${cls("capacity")} pl-8`}
                 />
               </div>
