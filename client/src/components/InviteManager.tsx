@@ -2,7 +2,8 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, KeyRound, Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { checkNewPassword } from "@shared/passwordRule";
 import { api, buildUrl } from "@shared/routes";
 import type {
   CreateInviteResponse,
@@ -100,6 +101,15 @@ export function InviteManager() {
   const [days, setDays] = useState("7");
   const [fresh, setFresh] = useState<CreateInviteResponse | null>(null);
   const [tempPassword, setTempPassword] = useState<ResetPasswordResponse | null>(null);
+  /**
+   * 재설정할 교사. 눌러야 입력란이 열린다 — 목록 모든 줄에 비밀번호 칸을 깔아
+   * 두면 실수로 엉뚱한 교사를 바꾸게 된다.
+   */
+  const [resetting, setResetting] = useState<string | null>(null);
+  /** 관리자가 지정하는 비밀번호. 비우면 서버가 무작위로 만든다. */
+  const [customPw, setCustomPw] = useState({ next: "", confirm: "" });
+  const [showPw, setShowPw] = useState(false);
+  const [pwError, setPwError] = useState("");
 
   const { data: list, isLoading } = useQuery<InviteSummary[]>({
     queryKey: [api.invites.list.path],
@@ -132,21 +142,61 @@ export function InviteManager() {
   const refresh = () =>
     queryClient.invalidateQueries({ queryKey: [api.invites.list.path] });
 
+  /** 재설정 입력란을 접고 값을 지운다. */
+  const closeReset = () => {
+    setResetting(null);
+    setCustomPw({ next: "", confirm: "" });
+    setShowPw(false);
+    setPwError("");
+  };
+
+  /**
+   * 재설정 보내기. 비우면 무작위, 넣으면 그 값이다.
+   *
+   * 지정한 값은 **응답으로 돌아오지 않으므로** 관리자가 잘못 입력하면 보여줄 수가
+   * 없다. 그래서 여기서 두 번 입력을 받고 규칙까지 먼저 본다.
+   */
+  const submitReset = (teacherId: string) => {
+    const next = customPw.next;
+    if (!next) {
+      setPwError("");
+      resetPassword.mutate({ teacherId });
+      return;
+    }
+    const problem = checkNewPassword({ next });
+    if (problem) {
+      setPwError(problem);
+      return;
+    }
+    if (next !== customPw.confirm) {
+      setPwError("비밀번호가 서로 달라요.");
+      return;
+    }
+    setPwError("");
+    resetPassword.mutate({ teacherId, password: next });
+  };
+
   /**
    * 비밀번호 재설정. 서버가 임시 비밀번호를 만들어 한 번만 돌려준다.
    * 교사가 메일을 받을 수 없으므로 관리자가 직접 전달해야 한다.
    */
   const resetPassword = useMutation({
-    mutationFn: async (teacherId: string) => {
-      const res = await fetch(buildUrl(api.teachers.resetPassword.path, { id: teacherId }), {
+    mutationFn: async (input: { teacherId: string; password?: string }) => {
+      const res = await fetch(buildUrl(api.teachers.resetPassword.path, { id: input.teacherId }), {
         method: "POST",
-        headers: authHeaders,
+        headers: { "Content-Type": "application/json", ...authHeaders },
+        // 지정하지 않으면 빈 본문. 서버가 무작위로 만든다.
+        body: JSON.stringify(input.password ? { password: input.password } : {}),
       });
       const body = await res.json().catch(() => null);
       if (!res.ok) throw new Error(body?.message ?? "비밀번호를 바꾸지 못했습니다.");
       return body as ResetPasswordResponse;
     },
-    onSuccess: (data) => setTempPassword(data),
+    onSuccess: (data) => {
+      setTempPassword(data);
+      // 입력값을 바로 지운다. 창을 열어 둔 채 자리를 비우는 일이 있다.
+      closeReset();
+    },
     onError: (err: Error) =>
       toast({ title: "재설정하지 못했습니다", description: err.message, variant: "destructive" }),
   });
@@ -335,13 +385,27 @@ export function InviteManager() {
                   {tempPassword && (
                     <div className="rounded-xl border-2 border-primary/30 bg-primary/[0.04] p-4 space-y-2">
                       <div className="text-xs font-bold text-primary">
-                        {tempPassword.loginId} 님의 임시 비밀번호
+                        {tempPassword.loginId} 님의 비밀번호를 바꿨습니다
                       </div>
-                      <p className="font-mono text-2xl font-bold tracking-wider text-foreground text-center bg-background rounded-lg border border-border py-2">
-                        {tempPassword.tempPassword}
-                      </p>
-                      <p className="text-xs text-destructive font-semibold">
-                        지금만 볼 수 있습니다. 당사자에게 직접 전달해 주세요.
+                      {/* 관리자가 직접 지정했으면 값이 내려오지 않는다. 아는 값을
+                          되돌려 보내면 네트워크 로그에 한 번 더 남을 뿐이다. */}
+                      {tempPassword.tempPassword ? (
+                        <>
+                          <p className="font-mono text-2xl font-bold tracking-wider text-foreground text-center bg-background rounded-lg border border-border py-2">
+                            {tempPassword.tempPassword}
+                          </p>
+                          <p className="text-xs text-destructive font-semibold">
+                            지금만 볼 수 있습니다. 당사자에게 직접 전달해 주세요.
+                          </p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          입력한 비밀번호로 바꿨습니다. 화면에 다시 보여주지 않습니다.
+                        </p>
+                      )}
+                      <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">
+                        <strong>임시 비밀번호입니다.</strong> 로그인한 뒤 &quot;비밀번호
+                        변경&quot;에서 바꿔 달라고 안내해 주세요.
                       </p>
                       <button
                         type="button"
@@ -358,10 +422,8 @@ export function InviteManager() {
                     </p>
                   )}
                   {teachers?.map((t) => (
-                    <div
-                      key={t.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border p-3"
-                    >
+                    <div key={t.id} className="rounded-lg border border-border p-3">
+                      <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-sm font-semibold text-foreground break-words">
                           {t.name}
@@ -375,13 +437,85 @@ export function InviteManager() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => resetPassword.mutate(t.id)}
+                        onClick={() => (resetting === t.id ? closeReset() : (closeReset(), setResetting(t.id)))}
                         disabled={resetPassword.isPending}
                         className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border-2 border-border text-[11px] font-bold hover:bg-muted/50 disabled:opacity-40 transition-colors"
                       >
                         <KeyRound className="w-3 h-3" />
                         비밀번호 재설정
                       </button>
+                      </div>
+
+                      {/* 눌렀을 때만 열린다. 모든 줄에 입력란을 깔아 두면 실수로
+                          엉뚱한 교사의 비밀번호를 바꾸게 된다. */}
+                      {resetting === t.id && (
+                        <div className="mt-3 pt-3 border-t border-border space-y-2">
+                          <label className="text-[11px] font-bold text-foreground">
+                            비밀번호 직접 입력 <span className="font-normal text-muted-foreground">(선택)</span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showPw ? "text" : "password"}
+                              value={customPw.next}
+                              onChange={(e) => {
+                                setCustomPw((p) => ({ ...p, next: e.target.value }));
+                                setPwError("");
+                              }}
+                              autoComplete="new-password"
+                              placeholder="비우면 무작위로 만듭니다"
+                              className="w-full pl-2.5 pr-9 py-2 text-xs rounded-lg border-2 border-border bg-background focus:outline-none focus:border-primary transition-colors"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowPw((v) => !v)}
+                              aria-label={showPw ? "비밀번호 숨기기" : "비밀번호 보기"}
+                              className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded text-muted-foreground hover:bg-black/5 transition-colors"
+                            >
+                              {showPw ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                          {/* 지정한 값은 응답으로 돌아오지 않는다. 잘못 치면 보여줄
+                              수가 없으므로 두 번 받는다. */}
+                          {customPw.next && (
+                            <input
+                              type={showPw ? "text" : "password"}
+                              value={customPw.confirm}
+                              onChange={(e) => {
+                                setCustomPw((p) => ({ ...p, confirm: e.target.value }));
+                                setPwError("");
+                              }}
+                              autoComplete="new-password"
+                              placeholder="한 번 더 입력"
+                              className="w-full px-2.5 py-2 text-xs rounded-lg border-2 border-border bg-background focus:outline-none focus:border-primary transition-colors"
+                            />
+                          )}
+                          {pwError && (
+                            <p className="text-[11px] text-destructive font-medium">{pwError}</p>
+                          )}
+                          <div className="flex gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => submitReset(t.id)}
+                              disabled={resetPassword.isPending}
+                              className="flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-[11px] font-bold hover:opacity-90 disabled:opacity-40 transition-opacity"
+                            >
+                              {resetPassword.isPending
+                                ? "바꾸는 중…"
+                                : customPw.next
+                                  ? "이 비밀번호로 재설정"
+                                  : "무작위로 재설정"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={closeReset}
+                              disabled={resetPassword.isPending}
+                              className="px-3 py-2 rounded-lg border-2 border-border text-[11px] font-bold hover:bg-muted/50 disabled:opacity-40 transition-colors"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

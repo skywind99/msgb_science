@@ -50,9 +50,20 @@ export const checkInviteSchema = z.object({
   token: z.string().min(20).max(200),
 });
 
-/** 관리자가 교사 비밀번호를 재설정할 때. 새 비밀번호는 서버가 만들어 한 번만 보여준다. */
+/**
+ * 관리자가 교사 비밀번호를 재설정할 때.
+ *
+ * `password` 를 비우면 서버가 무작위로 만들어 **한 번만** 보여준다. 넣으면 그
+ * 값으로 바꾸고 응답에는 담지 않는다. 규칙은 가입·본인 변경과 같다.
+ */
 export const resetPasswordSchema = z.object({
   teacherId: z.string().uuid(),
+  password: passwordSchema.optional(),
+});
+
+/** 본문만 따로 검사할 때 (라우트는 `:id` 를 경로에서 받는다). */
+export const resetPasswordBodySchema = z.object({
+  password: passwordSchema.optional(),
 });
 
 export type CreateInviteRequest = z.infer<typeof createInviteSchema>;
