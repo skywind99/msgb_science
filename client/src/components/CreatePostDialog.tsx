@@ -3,7 +3,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { api } from "@shared/routes";
 import { useCreatePost } from "@/hooks/use-posts";
-import { X, Loader2, Pencil } from "lucide-react";
+import { X, Loader2, Pencil, Sparkles, Info } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { AnimatePresence, motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -19,10 +20,14 @@ import { useAuthHeaders } from "@/contexts/admin";
 import { activityToPayload } from "@/components/ActivityFields";
 import {
   ActivityPanel,
+  applyAiDates,
   emptyActivityPanel,
   panelToDraft,
   type ActivityPanelDraft,
+  type AiFilledField,
 } from "@/components/ActivityPanel";
+import { errorMessage, fetchAiStatus, readImage, readText } from "@/lib/aiFill";
+import { isPublicStorageUrl } from "@shared/storageUrl";
 
 // 활동 필드는 별도 state 로 다루므로 폼이 직접 등록하는 항목만 여기에 둔다.
 // 활동 정보의 앞뒤 관계 검사는 저장 직전에 서버와 같은 스키마로 한 번 더 돌린다.
@@ -54,6 +59,27 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   const [blocks, setBlocks] = useState<EditorBlock[]>(() => [newEditorBlock("text")]);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [activity, setActivity] = useState<ActivityPanelDraft>(emptyActivityPanel);
+
+  // AI 가 채운 칸. 사용자가 고치면 그 칸만 빠진다.
+  const [aiFilled, setAiFilled] = useState<Set<AiFilledField>>(new Set());
+  const [aiTitleFilled, setAiTitleFilled] = useState(false);
+  const [aiBusy, setAiBusy] = useState<"image" | "text" | null>(null);
+
+  // 키가 등록돼 있는지. 다이얼로그를 열 때만 묻는다.
+  const { data: aiStatus } = useQuery({
+    queryKey: [api.ai.status.path],
+    enabled: isOpen,
+    staleTime: 60_000,
+    queryFn: () => fetchAiStatus(authHeaders),
+  });
+  const aiReady = !!aiStatus && (aiStatus.groq || aiStatus.gemini);
+  const aiHint = aiStatus && !aiReady ? "관리자가 AI를 설정하지 않았어요." : undefined;
+
+  /** 대표 이미지가 우리 스토리지에 있어야 서버가 읽을 수 있다. */
+  const thumbnailReadable = isPublicStorageUrl(
+    thumbnailUrl,
+    import.meta.env.VITE_SUPABASE_URL as string | undefined
+  );
   const createPost = useCreatePost();
   const { toast } = useToast();
   const authHeaders = useAdminPw();
@@ -74,6 +100,96 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setBlocks([newEditorBlock("text")]);
     setThumbnailUrl("");
     setActivity(emptyActivityPanel);
+    setAiFilled(new Set());
+    setAiTitleFilled(false);
+    setAiBusy(null);
+  };
+
+  /**
+   * AI 결과를 화면에 넣는다.
+   *
+   * **기존에 쓴 내용을 지우거나 덮어쓰지 않는다.**
+   *  - 제목: 비어 있을 때만 채운다
+   *  - 본문: 빈 글상자가 있으면 거기에, 없으면 새 글상자로 덧붙인다
+   *  - 활동 정보: `applyAiDates` 가 날짜 규칙까지 맞춰 준다
+   */
+  const applyAiResult = (result: {
+    title: string | null;
+    body: string | null;
+    [k: string]: unknown;
+  }) => {
+    const marked = new Set(aiFilled);
+
+    if (result.title && !form.getValues("title").trim()) {
+      form.setValue("title", result.title);
+      setAiTitleFilled(true);
+    }
+
+    if (result.body) {
+      setBlocks((prev) => {
+        const emptyIdx = prev.findIndex((b) => b.type === "text" && !b.value.trim());
+        if (emptyIdx >= 0) {
+          const next = [...prev];
+          next[emptyIdx] = { ...next[emptyIdx], value: result.body! };
+          return next;
+        }
+        return [...prev, newEditorBlock("text", result.body!)];
+      });
+    }
+
+    const { next, filled } = applyAiDates(activity, result as never);
+    setActivity(next);
+    filled.forEach((f) => marked.add(f));
+    setAiFilled(marked);
+
+    return filled.length + (result.title ? 1 : 0) + (result.body ? 1 : 0);
+  };
+
+  /** 대표 이미지 한 장을 읽는다. **버튼을 눌렀을 때만 전송된다.** */
+  const runReadImage = async () => {
+    setAiBusy("image");
+    try {
+      const filled = applyAiResult(await readImage(thumbnailUrl, authHeaders));
+      toast(
+        filled > 0
+          ? { title: "AI가 읽은 값을 채웠습니다.", description: "보라색 칸을 꼭 확인해 주세요." }
+          : { title: "읽을 수 있는 정보가 없었어요.", description: "직접 입력해 주세요." }
+      );
+    } catch (err) {
+      toast({ title: "AI로 읽지 못했어요", description: errorMessage(err), variant: "destructive" });
+    } finally {
+      setAiBusy(null);
+    }
+  };
+
+  /** 본문 글상자의 **글자만** 보낸다. 이미지는 보내지 않는다. */
+  const runReadText = async () => {
+    const text = blocks
+      .filter((b) => b.type === "text" && b.value.trim())
+      .map((b) => b.value.trim())
+      .join("\n\n");
+
+    if (!text) {
+      toast({
+        title: "본문이 비어 있어요",
+        description: "글상자에 안내문을 붙여 넣은 뒤 다시 눌러 주세요.",
+      });
+      return;
+    }
+
+    setAiBusy("text");
+    try {
+      const filled = applyAiResult(await readText(text, authHeaders));
+      toast(
+        filled > 0
+          ? { title: "AI가 읽은 값을 채웠습니다.", description: "보라색 칸을 꼭 확인해 주세요." }
+          : { title: "읽을 수 있는 정보가 없었어요.", description: "직접 입력해 주세요." }
+      );
+    } catch (err) {
+      toast({ title: "AI로 읽지 못했어요", description: errorMessage(err), variant: "destructive" });
+    } finally {
+      setAiBusy(null);
+    }
   };
 
   const onSubmit = (data: FormValues) => {
@@ -171,9 +287,15 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                     <div className="space-y-2">
                       <label className="text-sm font-semibold text-foreground">제목</label>
                       <input
-                        {...form.register("title")}
+                        {...form.register("title", {
+                          onChange: () => setAiTitleFilled(false),
+                        })}
                         placeholder="게시글 제목을 입력하세요"
-                        className="w-full px-4 py-3 rounded-xl border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 transition-all"
+                        className={`w-full px-4 py-3 rounded-xl border-2 bg-background focus:outline-none focus:ring-4 transition-all ${
+                          aiTitleFilled
+                            ? "border-violet-300 bg-violet-50 focus:border-violet-500 focus:ring-violet-200"
+                            : "border-border focus:border-primary focus:ring-primary/10"
+                        }`}
                       />
                       {form.formState.errors.title && (
                         <p className="text-sm text-destructive font-medium">{form.formState.errors.title.message}</p>
@@ -196,6 +318,46 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                         variant="compact"
                         placeholder="https://example.com/thumbnail.jpg"
                       />
+
+                      {/* 개인정보 안내 — 이미지가 있을 때만. 누르기 전에 읽히도록 버튼 위에 둔다. */}
+                      {thumbnailUrl && (
+                        <p className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+                          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                          <span>
+                            올리기만 해서는 분석하지 않아요. <strong>"AI로 읽기"를 누를 때만</strong>{" "}
+                            이 이미지가 AI로 전송됩니다. 학생이 나온 사진에는 누르지 마세요.
+                            {/* TODO: 공급자 약관 확인 후 문구 확정 (docs/TODO.md) */}
+                          </span>
+                        </p>
+                      )}
+
+                      {thumbnailUrl && (
+                        <div className="space-y-1.5">
+                          <button
+                            type="button"
+                            onClick={runReadImage}
+                            disabled={!aiReady || !thumbnailReadable || aiBusy !== null}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border-2 border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                          >
+                            {aiBusy === "image" ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Sparkles className="w-3.5 h-3.5" />
+                            )}
+                            {aiBusy === "image" ? "읽는 중…" : "AI로 읽기"}
+                          </button>
+
+                          <p className="text-xs text-muted-foreground">
+                            {!aiStatus
+                              ? "AI 설정을 확인하는 중…"
+                              : !aiReady
+                                ? "관리자가 AI를 설정하지 않았어요."
+                                : !thumbnailReadable
+                                  ? "외부 주소 이미지는 읽을 수 없어요. URL 탭의 “저장” 을 눌러 서버에 보관한 뒤 다시 시도해 주세요."
+                                  : "AI 사용 가능 · 포스터라면 제목과 활동 정보를 채워 줍니다."}
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     {/* Blocks */}
@@ -209,7 +371,25 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
                   </div>
 
                   <div className="lg:col-span-5 min-w-0">
-                    <ActivityPanel value={activity} onChange={setActivity} />
+                    <ActivityPanel
+                      value={activity}
+                      onChange={(next) => {
+                        // 사용자가 고친 칸은 보라색 표시를 푼다.
+                        const changed = (Object.keys(next) as Array<keyof ActivityPanelDraft>).filter(
+                          (k) => next[k] !== activity[k]
+                        );
+                        if (changed.length > 0 && aiFilled.size > 0) {
+                          const rest = new Set(aiFilled);
+                          changed.forEach((k) => rest.delete(k as AiFilledField));
+                          setAiFilled(rest);
+                        }
+                        setActivity(next);
+                      }}
+                      aiFilled={aiFilled}
+                      onAiFill={runReadText}
+                      aiBusy={aiBusy === "text"}
+                      aiHint={aiHint}
+                    />
                   </div>
                 </form>
               </div>

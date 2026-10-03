@@ -1,4 +1,5 @@
 import type { AiFillErrorCode, AiProvider } from "../shared/schema.js";
+import { isPublicStorageUrl } from "../shared/storageUrl.js";
 
 /**
  * AI 공급자 호출.
@@ -95,26 +96,13 @@ export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
  * 우리 Supabase Storage 의 공개 URL 만 허용한다.
  *
  * 허용하지 않으면 로그인한 교사가 서버를 시켜 **아무 주소로나 요청을 보내게**
- * 할 수 있다 (사설 IP 포함). 공급자에게 URL 을 그대로 넘기든 서버가 받아서
- * 넘기든, 검사는 똑같이 필요하다.
+ * 할 수 있다 (사설 IP 포함). 공급자에게 URL 을 그대로 넘기므로 더욱 그렇다.
+ *
+ * 판정은 `shared/storageUrl.ts` 에 있다. **클라이언트가 "AI로 읽기" 버튼을
+ * 비활성화할 때 같은 함수를 쓴다** — 갈라지면 버튼은 눌리는데 서버가 막는다.
  */
 export function isAllowedImageUrl(raw: string): boolean {
-  const base = process.env.SUPABASE_URL;
-  if (!base) return false;
-
-  let url: URL;
-  let allowed: URL;
-  try {
-    url = new URL(raw);
-    allowed = new URL(base);
-  } catch {
-    return false;
-  }
-
-  if (url.protocol !== "https:") return false;
-  if (url.hostname !== allowed.hostname) return false;
-  // 공개 객체 경로만. 서명 URL 이나 관리 API 경로는 받지 않는다.
-  return url.pathname.startsWith("/storage/v1/object/public/");
+  return isPublicStorageUrl(raw, process.env.SUPABASE_URL);
 }
 
 // ── 호출 ──────────────────────────────────────────────────

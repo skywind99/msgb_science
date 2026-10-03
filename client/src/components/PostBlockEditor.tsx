@@ -1,10 +1,12 @@
-import { AlignLeft, ArrowDown, ArrowUp, ImageIcon, Plus, Trash2, Youtube } from "lucide-react";
+import { useState } from "react";
+import { AlignLeft, ArrowDown, ArrowUp, ImageIcon, Loader2, Plus, ScanLine, Trash2, Youtube } from "lucide-react";
 import {
   newEditorBlock,
   type EditorBlock,
   type EditorBlockType,
 } from "@shared/postBlocks";
 import { ImageInput } from "@/components/ImageInput";
+import { extractText } from "@/lib/ocr";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -82,6 +84,11 @@ export function PostBlockEditor({
 }) {
   const { toast } = useToast();
 
+  /** 글자를 뽑는 중인 블록 id. 한 번에 하나만 돌린다. */
+  const [ocrBusy, setOcrBusy] = useState<string | null>(null);
+  /** 사진이 없는데 눌렀을 때의 인라인 안내. */
+  const [ocrError, setOcrError] = useState<Record<string, string>>({});
+
   const setValue = (id: string, value: string) =>
     onChange(blocks.map((b) => (b.id === id ? { ...b, value } : b)));
 
@@ -93,6 +100,35 @@ export function PostBlockEditor({
       return;
     }
     onChange(blocks.filter((b) => b.id !== id));
+  };
+
+  /**
+   * 사진에서 글자를 뽑아 **바로 아래 새 글상자**로 넣는다.
+   *
+   * 기존 글은 건드리지 않는다 — 덮어쓰면 교사가 쓴 내용이 사라진다.
+   * 브라우저 안에서만 처리하므로 사진은 어디로도 전송되지 않는다.
+   */
+  const runOcr = async (block: EditorBlock, index: number) => {
+    const url = block.value.trim();
+    if (!url) {
+      setOcrError((e) => ({ ...e, [block.id]: "사진을 먼저 선택하세요." }));
+      return;
+    }
+    setOcrError((e) => ({ ...e, [block.id]: "" }));
+    setOcrBusy(block.id);
+    try {
+      const result = await extractText(url);
+      if (!result.ok) {
+        setOcrError((e) => ({ ...e, [block.id]: result.message }));
+        return;
+      }
+      const next = [...blocks];
+      next.splice(index + 1, 0, newEditorBlock("text", result.text));
+      onChange(next);
+      toast({ title: "읽은 글을 이 사진 아래 글상자에 넣었습니다." });
+    } finally {
+      setOcrBusy(null);
+    }
   };
 
   /** 블록을 한 칸 옮긴다. 끝이면 아무 일도 하지 않는다. */
@@ -150,13 +186,36 @@ export function PostBlockEditor({
             )}
 
             {block.type === "photo" && (
-              <ImageInput
-                value={block.value}
-                onChange={(url) => setValue(block.id, url)}
-                authHeaders={authHeaders}
-                variant="compact"
-                placeholder="이미지 URL 또는 파일 업로드"
-              />
+              <div className="space-y-2">
+                <ImageInput
+                  value={block.value}
+                  onChange={(url) => {
+                    setValue(block.id, url);
+                    setOcrError((e) => ({ ...e, [block.id]: "" }));
+                  }}
+                  authHeaders={authHeaders}
+                  variant="compact"
+                  placeholder="이미지 URL 또는 파일 업로드"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => runOcr(block, idx)}
+                  disabled={ocrBusy !== null}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold rounded-lg border-2 border-border bg-background hover:border-primary hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  {ocrBusy === block.id ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <ScanLine className="w-3.5 h-3.5" />
+                  )}
+                  {ocrBusy === block.id ? "읽는 중…" : "텍스트 추출"}
+                </button>
+
+                {ocrError[block.id] && (
+                  <p className="text-xs text-destructive font-medium">{ocrError[block.id]}</p>
+                )}
+              </div>
             )}
 
             {block.type === "youtube" && (
@@ -171,6 +230,12 @@ export function PostBlockEditor({
           </div>
         );
       })}
+
+      {/* 사진은 전송되지 않는다. 다만 첫 호출에는 학습 데이터를 내려받느라 시간이 걸린다. */}
+      <p className="text-xs text-muted-foreground px-1">
+        사진 블록의 <strong>텍스트 추출</strong>은 브라우저 안에서만 처리됩니다. 사진은
+        어디로도 전송되지 않아요. 처음 한 번은 준비에 시간이 걸립니다.
+      </p>
 
       {/* + 추가 줄 */}
       <div className="flex flex-wrap items-center gap-2 p-2 rounded-xl border-2 border-dashed border-border">

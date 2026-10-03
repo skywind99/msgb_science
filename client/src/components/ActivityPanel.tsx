@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, ClipboardList, Info, Lock, MapPin, Users } from "lucide-react";
+import { CalendarClock, ClipboardList, Info, Loader2, Lock, MapPin, Sparkles, Users } from "lucide-react";
 import { Toggle, type ActivityDraft } from "@/components/ActivityFields";
 
 /**
@@ -84,6 +84,95 @@ export function panelToDraft(p: ActivityPanelDraft): ActivityDraft {
   };
 }
 
+/** AI 가 채울 수 있는 패널 칸. 보라색 표시도 이 이름으로 추적한다. */
+export type AiFilledField =
+  | "date" | "endDate" | "startTime" | "endTime"
+  | "location" | "capacity" | "applyStart" | "applyDeadline" | "applyNote";
+
+/** `POST /api/ai/fill` 이 돌려주는 모양 중 패널이 쓰는 부분. */
+export type AiDates = {
+  date: string | null;
+  endDate: string | null;
+  startTime: string | null;
+  endTime: string | null;
+  location: string | null;
+  capacity: number | null;
+  applyStart: string | null;
+  applyDeadline: string | null;
+  applyNote: string | null;
+};
+
+/**
+ * AI 결과를 패널 상태로 옮긴다.
+ *
+ * **여기가 이 기능에서 가장 틀리기 쉬운 곳이다.** 종료 날짜를 정하는 길이 둘인데
+ * 둘 다 적용되면 날이 하루 더 밀린다.
+ *  - `multiDay` 가 켜져 있으면 `endDate` 를 그대로 쓴다 (`resolveEnd` 가 먼저 반환)
+ *  - 꺼져 있고 종료 시각이 시작보다 이르면 **자동으로 +1일**
+ *
+ * 그래서 AI 가 `endDate` 를 줬다고 무턱대고 `multiDay` 를 켜지 않는다.
+ *
+ *  - 밤을 넘기는 하루짜리 (12/19 20:00 ~ 12/20 01:00)
+ *      → `multiDay` 끔. 자동 +1 규칙에 맡긴다. 요약에 "다음 날 01:00" 으로 나온다.
+ *  - 진짜 여러 날 (4/2 ~ 4/3)
+ *      → `multiDay` 켬. `endDate` 를 그대로 넣는다.
+ *
+ * 날짜를 못 읽었으면 비워 둔다. 연도는 서버가 KST 오늘을 기준으로 지시한다.
+ */
+export function applyAiDates(
+  base: ActivityPanelDraft,
+  ai: Partial<AiDates>
+): { next: ActivityPanelDraft; filled: AiFilledField[] } {
+  const next = { ...base };
+  const filled: AiFilledField[] = [];
+
+  const put = <K extends AiFilledField>(key: K, value: string) => {
+    if (!value) return;
+    next[key] = value as ActivityPanelDraft[K];
+    filled.push(key);
+  };
+
+  const date = ai.date ?? "";
+  const startTime = ai.startTime ?? "";
+  const endTime = ai.endTime ?? "";
+
+  put("date", date);
+  put("startTime", startTime);
+  put("endTime", endTime);
+
+  // 종료 날짜 판정
+  const endDate = ai.endDate ?? "";
+  if (date && endDate && endDate !== date) {
+    // 하루 뒤 + 종료 시각이 더 이르면 자정을 넘긴 하루짜리다.
+    // 이때 multiDay 를 켜면 "여러 날 활동" 으로 잘못 보이고, 끄면 자동 +1 이
+    // 같은 결과를 만든다. 끄는 쪽이 맞다.
+    const overnight = endDate === shiftDate(date, 1) && !!startTime && !!endTime && endTime < startTime;
+    if (overnight) {
+      next.multiDay = false;
+      next.endDate = "";
+    } else {
+      next.multiDay = true;
+      next.endDate = endDate;
+      filled.push("endDate");
+    }
+  } else {
+    // 종료 날짜가 없거나 시작과 같으면 하루짜리다. 자동 +1 규칙에 맡긴다.
+    next.multiDay = false;
+    next.endDate = "";
+  }
+
+  put("location", ai.location ?? "");
+  put("capacity", ai.capacity == null ? "" : String(ai.capacity));
+  put("applyStart", ai.applyStart ?? "");
+  put("applyDeadline", ai.applyDeadline ?? "");
+  put("applyNote", ai.applyNote ?? "");
+
+  // 활동 정보가 하나라도 채워졌으면 신청 받기를 켠다. 안 켜면 화면에 안 보인다.
+  if (filled.length > 0) next.applyEnabled = true;
+
+  return { next, filled };
+}
+
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
 function weekday(date: string): string {
@@ -124,6 +213,10 @@ export function summarize(p: ActivityPanelDraft): string {
 const inputClass =
   "w-full px-3 py-2 text-sm rounded-lg border-2 border-border bg-background focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-all";
 
+/** AI 가 채운 칸. 교사가 눈으로 바로 가려낼 수 있어야 한다. */
+const aiClass =
+  "w-full px-3 py-2 text-sm rounded-lg border-2 border-violet-300 bg-violet-50 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-200 transition-all";
+
 function Field({
   label,
   hint,
@@ -158,9 +251,20 @@ function GroupHeading({ icon, children }: { icon: React.ReactNode; children: Rea
 export function ActivityPanel({
   value,
   onChange,
+  aiFilled,
+  onAiFill,
+  aiBusy,
+  aiHint,
 }: {
   value: ActivityPanelDraft;
   onChange: (next: ActivityPanelDraft) => void;
+  /** AI 가 채운 칸. 사용자가 고치면 호출하는 쪽에서 지운다. */
+  aiFilled?: ReadonlySet<AiFilledField>;
+  /** "AI 입력" 버튼. 없으면 버튼을 그리지 않는다. */
+  onAiFill?: () => void;
+  aiBusy?: boolean;
+  /** 버튼 아래 안내(키 미등록 등). 없으면 안 보인다. */
+  aiHint?: string;
 }) {
   // 마감 칩을 누를 수 없을 때 보여주는 안내. 입력하면 사라진다.
   const [chipError, setChipError] = useState(false);
@@ -170,6 +274,9 @@ export function ActivityPanel({
     if (key === "date" || key === "startTime") setChipError(false);
     onChange({ ...value, [key]: v });
   };
+
+  /** 그 칸이 AI 가 채운 것이면 보라색으로. 사용자가 고치면 호출하는 쪽에서 풀린다. */
+  const cls = (field: AiFilledField) => (aiFilled?.has(field) ? aiClass : inputClass);
 
   /** 신청 마감을 활동 시작 기준으로 채운다. 0 이면 시작 시각 그대로. */
   const fillDeadline = (daysBefore: number) => {
@@ -193,14 +300,54 @@ export function ActivityPanel({
       {value.applyEnabled && (
         <div className="space-y-4 pt-4 border-t border-border">
           {/* 활동 정보 */}
-          <GroupHeading icon={<CalendarClock className="w-3.5 h-3.5" />}>활동 정보</GroupHeading>
+          <div className="flex items-center justify-between gap-2">
+            <GroupHeading icon={<CalendarClock className="w-3.5 h-3.5" />}>활동 정보</GroupHeading>
+            {onAiFill && (
+              <button
+                type="button"
+                onClick={onAiFill}
+                disabled={aiBusy || !!aiHint}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-bold rounded-lg border-2 border-violet-300 bg-violet-50 text-violet-700 hover:bg-violet-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                {aiBusy ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                {aiBusy ? "읽는 중…" : "AI 입력"}
+              </button>
+            )}
+          </div>
+
+          {onAiFill && (
+            <p className="text-xs text-muted-foreground">
+              본문 글상자의 <strong>글자만</strong> AI로 보냅니다. 이미지는 보내지 않아요.
+            </p>
+          )}
+
+          {aiHint && (
+            <p className="flex gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>{aiHint}</span>
+            </p>
+          )}
+
+          {aiFilled && aiFilled.size > 0 && (
+            <p className="flex gap-2 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-lg p-2.5">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                보라색 칸은 <strong>AI가 채운 값</strong>이에요. 꼭 확인해 주세요.
+                시각이 적혀 있지 않은 신청 기간은 00:00과 23:59로 넣었어요.
+              </span>
+            </p>
+          )}
 
           <Field label="날짜 *">
             <input
               type="date"
               value={value.date}
               onChange={(e) => set("date", e.target.value)}
-              className={inputClass}
+              className={cls("date")}
             />
           </Field>
 
@@ -210,7 +357,7 @@ export function ActivityPanel({
                 type="time"
                 value={value.startTime}
                 onChange={(e) => set("startTime", e.target.value)}
-                className={inputClass}
+                className={cls("startTime")}
               />
             </Field>
             <Field label="종료" hint="(선택)">
@@ -218,7 +365,7 @@ export function ActivityPanel({
                 type="time"
                 value={value.endTime}
                 onChange={(e) => set("endTime", e.target.value)}
-                className={inputClass}
+                className={cls("endTime")}
               />
             </Field>
           </div>
@@ -237,7 +384,7 @@ export function ActivityPanel({
                 value={value.endDate}
                 min={value.date || undefined}
                 onChange={(e) => set("endDate", e.target.value)}
-                className={inputClass}
+                className={cls("endDate")}
               />
             </Field>
           )}
@@ -251,7 +398,7 @@ export function ActivityPanel({
                   value={value.location}
                   onChange={(e) => set("location", e.target.value)}
                   placeholder="제2과학실"
-                  className={`${inputClass} pl-8`}
+                  className={`${cls("location")} pl-8`}
                 />
               </div>
             </Field>
@@ -265,7 +412,7 @@ export function ActivityPanel({
                   value={value.capacity}
                   onChange={(e) => set("capacity", e.target.value)}
                   placeholder="24"
-                  className={`${inputClass} pl-8`}
+                  className={`${cls("capacity")} pl-8`}
                 />
               </div>
             </Field>
@@ -281,7 +428,7 @@ export function ActivityPanel({
               type="datetime-local"
               value={value.applyStart}
               onChange={(e) => set("applyStart", e.target.value)}
-              className={inputClass}
+              className={cls("applyStart")}
             />
           </Field>
 
@@ -290,7 +437,7 @@ export function ActivityPanel({
               type="datetime-local"
               value={value.applyDeadline}
               onChange={(e) => set("applyDeadline", e.target.value)}
-              className={inputClass}
+              className={cls("applyDeadline")}
             />
           </Field>
 
@@ -368,7 +515,7 @@ export function ActivityPanel({
                     onChange={(e) => set("applyNote", e.target.value)}
                     rows={2}
                     placeholder="실험복 지참, 점심 식사 후 집합 등"
-                    className={`${inputClass} resize-y`}
+                    className={`${cls("applyNote")} resize-y`}
                   />
                 </Field>
               </div>
