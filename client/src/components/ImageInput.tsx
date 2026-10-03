@@ -1,5 +1,7 @@
 import { useRef, useState } from "react";
-import { ImageIcon, Link2, Loader2, Upload } from "lucide-react";
+import { ImageIcon, Link2, Loader2, Maximize2, Upload } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { uploadImage, uploadSummary } from "@/lib/imageUpload";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -13,20 +15,6 @@ import { useToast } from "@/hooks/use-toast";
  * 누르지 않으면 외부 주소가 그대로 저장되고, 그 글은 나중에 "AI로 읽기" 를
  * 쓸 수 없다 (서버가 우리 도메인만 읽는다).
  */
-
-async function uploadImageFile(
-  file: File,
-  authHeaders: Record<string, string>
-): Promise<string | null> {
-  const res = await fetch("/api/upload-image", {
-    method: "POST",
-    headers: { "Content-Type": file.type, ...authHeaders },
-    body: file,
-  });
-  if (!res.ok) return null;
-  const data = (await res.json()) as { url?: string };
-  return data.url ?? null;
-}
 
 /** 외부 URL → Storage 미러링. 실패하면 원래 URL 을 그대로 쓴다. */
 async function mirrorImage(
@@ -68,6 +56,8 @@ export function ImageInput({
   const [mode, setMode] = useState<"url" | "file">("file");
   const [uploading, setUploading] = useState(false);
   const [mirroring, setMirroring] = useState(false);
+  /** 미리보기를 눌렀을 때 원본 비율로 크게 보여준다. */
+  const [zoomed, setZoomed] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
@@ -78,12 +68,13 @@ export function ImageInput({
     if (!file) return;
     setUploading(true);
     try {
-      const url = await uploadImageFile(file, authHeaders);
-      if (url) {
-        onChange(url);
-        toast({ title: "이미지 업로드 완료" });
+      // 보내기 전에 브라우저에서 줄인다. 실패 이유는 항상 돌아온다.
+      const result = await uploadImage(file, authHeaders);
+      if (result.ok) {
+        onChange(result.url);
+        toast({ title: "이미지 업로드 완료", description: uploadSummary(result.prepared) });
       } else {
-        toast({ title: "업로드 실패", variant: "destructive" });
+        toast({ title: "업로드 실패", description: result.message, variant: "destructive" });
       }
     } finally {
       setUploading(false);
@@ -218,19 +209,43 @@ export function ImageInput({
           잘라내지 않고(object-contain) 전체를 보여준다. */}
       {value && /^https?:\/\//i.test(value) && (
         <div className="relative">
-          <img
-            src={value}
-            alt=""
-            className={`w-full ${compact ? "h-28" : "h-36"} object-contain bg-muted rounded-lg border border-border`}
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
-          />
+          {/* 눌러서 원본 비율로 크게 본다. 썸네일만 보고는 글자가 읽히는지 알 수 없다. */}
+          <button
+            type="button"
+            onClick={() => setZoomed(true)}
+            aria-label="이미지 크게 보기"
+            className="group block w-full rounded-lg overflow-hidden border border-border focus:outline-none focus:ring-2 focus:ring-primary"
+          >
+            <img
+              src={value}
+              alt=""
+              className={`w-full ${compact ? "h-28" : "h-36"} object-contain bg-muted`}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = "none";
+              }}
+            />
+            <span className="absolute bottom-2 left-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-black/55 text-white text-[10px] font-semibold opacity-0 group-hover:opacity-100 group-focus:opacity-100 transition-opacity">
+              <Maximize2 className="w-3 h-3" /> 크게 보기
+            </span>
+          </button>
+
           {value.includes("supabase") && (
-            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-green-500/90 text-white text-[10px] font-bold">
+            <span className="absolute top-2 right-2 px-2 py-0.5 rounded-full bg-green-500/90 text-white text-[10px] font-bold pointer-events-none">
               ✓ 서버 저장됨
             </span>
           )}
+
+          {/* Esc 와 바깥 클릭은 Dialog 가 처리한다. */}
+          <Dialog open={zoomed} onOpenChange={setZoomed}>
+            <DialogContent className="max-w-5xl p-2 sm:p-3">
+              <DialogTitle className="sr-only">이미지 크게 보기</DialogTitle>
+              <img
+                src={value}
+                alt=""
+                className="w-full max-h-[90vh] object-contain rounded-lg bg-muted"
+              />
+            </DialogContent>
+          </Dialog>
         </div>
       )}
     </div>

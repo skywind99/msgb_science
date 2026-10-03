@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { X, Plus, Trash2, Eye, EyeOff, Settings, ChevronLeft, Upload, Loader2 } from "lucide-react";
 import type { Popup } from "@shared/schema";
 import { useAuthHeaders } from "@/contexts/admin";
+import { uploadImage, uploadSummary } from "@/lib/imageUpload";
 import { useToast } from "@/hooks/use-toast";
 import { PopupDisplay } from "@/components/PopupDisplay";
 
@@ -65,22 +66,16 @@ export function PopupManager() {
 
   const goList = () => { setView("list"); setEditId(null); setForm(empty); };
 
+  /** 글쓰기 화면과 **같은 업로드 경로**를 쓴다 — 줄이기와 오류 안내가 한 벌이다. */
   const handleImageUpload = async (file: File) => {
     setUploading(true);
     try {
-      const res = await fetch("/api/upload-image", {
-        method: "POST",
-        headers: { "Content-Type": file.type, ...headers },
-        body: file,
-      });
-      if (res.ok) {
-        const data = await res.json() as { url?: string };
-        if (data.url) {
-          setForm((f) => ({ ...f, imageUrl: data.url! }));
-          toast({ title: "이미지 업로드 완료" });
-        }
+      const result = await uploadImage(file, headers);
+      if (result.ok) {
+        setForm((f) => ({ ...f, imageUrl: result.url }));
+        toast({ title: "이미지 업로드 완료", description: uploadSummary(result.prepared) });
       } else {
-        toast({ title: "업로드 실패", variant: "destructive" });
+        toast({ title: "업로드 실패", description: result.message, variant: "destructive" });
       }
     } finally {
       setUploading(false);
