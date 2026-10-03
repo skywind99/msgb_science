@@ -166,6 +166,9 @@ const RESPONSE_SCHEMA = {
     applyStart: { type: "string", nullable: true },
     applyDeadline: { type: "string", nullable: true },
     applyNote: { type: "string", nullable: true },
+    dateHasYear: { type: "boolean", nullable: true },
+    applyHasYear: { type: "boolean", nullable: true },
+    dateWeekday: { type: "string", nullable: true },
   },
 } as const;
 
@@ -187,7 +190,14 @@ function instruction(mode: AiFillMode, today: string): string {
     "applyStart·applyDeadline 은 **신청 접수 기간**이며 YYYY-MM-DDTHH:MM 입니다.",
     "행사 일시와 신청 기간은 다릅니다. 신청 기간이 적혀 있지 않으면 둘 다 null 입니다.",
     "신청 기간에 시각이 없으면 시작은 00:00, 마감은 23:59 로 하세요.",
-    `연도가 적혀 있지 않으면 오늘(${today}) 의 연도를 쓰세요.`,
+    // **연도를 모델이 정하지 않는다.** 서버의 `shared/aiDates.ts` 가 정한다.
+    // 예전에는 "오늘의 연도를 쓰라" 고 했는데, 10월에 5월 안내문을 읽으면 다섯 달
+    // 지난 날짜가 나왔다. 모델에게는 "적혀 있었는지" 만 묻는다.
+    `연도가 적혀 있지 않으면 일단 오늘(${today}) 의 연도로 적고, dateHasYear 를 false 로 두세요.`,
+    "dateHasYear: 활동 날짜의 연도가 글에 적혀 있었으면 true, 없었으면 false.",
+    "applyHasYear: 신청 기간의 연도가 글에 적혀 있었으면 true, 없었으면 false.",
+    "dateWeekday: 활동 시작 날짜에 요일이 적혀 있으면 그 한 글자(예: 토). 없으면 null.",
+    "요일을 보고 연도를 추측하지 마세요. 적힌 그대로만 옮기세요.",
     "capacity 는 모집 인원 숫자만. '누구나' 처럼 인원 제한이 없으면 null.",
     "title 은 행사 이름만.",
     mode === "image"

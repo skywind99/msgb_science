@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarClock, ClipboardList, Info, Lock, MapPin, Users } from "lucide-react";
 import { Toggle, type ActivityDraft } from "@/components/ActivityFields";
 import { todayInKst } from "@shared/activity";
+import { nowInKst } from "@shared/aiDates";
 
 /**
  * 작성 화면 오른쪽 열 — 활동 신청 설정.
@@ -222,6 +223,58 @@ export function applyAiDates(
   return { next, filled };
 }
 
+/**
+ * AI 가 채운 활동 칸만 비운다. **사용자가 넣거나 고친 값은 건드리지 않는다.**
+ *
+ * 판정 기준을 새로 만들지 않았다. `aiFilled` 그대로다 — 사용자가 고치는 순간
+ * 그 칸이 집합에서 빠지므로, 여기 들어오는 것은 AI 가 넣고 그대로 둔 값뿐이다.
+ *
+ * 신청 받기 토글은 **AI 가 켰고 활동 칸이 모두 빈 경우에만** 끈다.
+ *  - 사용자가 미리 켜 뒀으면(`aiEnabledApply` 가 false) 그대로 켜 둔다
+ *  - 사용자가 직접 넣은 장소 한 줄이라도 남아 있으면 끄지 않는다.
+ *    끄면 그 값이 화면에서 사라져 지워진 것처럼 보인다
+ *
+ * 화면에 쓰는 함수지만 순수 함수로 둔 이유는 시험할 수 있어야 하기 때문이다.
+ * 잘못 지우면 교사가 쓴 내용이 돌아오지 않는다.
+ */
+export function clearAiFields(
+  value: ActivityPanelDraft,
+  aiFilled: ReadonlySet<AiFilledField>,
+  aiEnabledApply: boolean
+): ActivityPanelDraft {
+  const next = { ...value };
+
+  AI_FILLED_FIELDS.forEach((f) => {
+    if (aiFilled.has(f)) next[f] = "";
+  });
+  // `endDate` 가 AI 것이었다면 `multiDay` 도 AI 가 켠 것이다. 같이 되돌린다.
+  if (aiFilled.has("endDate")) {
+    next.multiDay = false;
+    next.endDate = "";
+  }
+
+  if (aiEnabledApply && AI_FILLED_FIELDS.every((f) => !next[f])) next.applyEnabled = false;
+
+  return next;
+}
+
+/**
+ * "신청 기간 시각은 00:00·23:59 로 넣었다" 는 안내를 띄울지.
+ *
+ * 그 문장은 **AI 가 실제로 그렇게 채웠을 때만** 쓸모가 있다. 신청 기간이 비어
+ * 있는데도 보이면, 교사는 어디를 봐야 할지 알 수 없는 설명을 읽게 된다.
+ * 보라색이 풀린 칸(사용자가 고친 칸)은 더 이상 AI 가 넣은 값이 아니므로 센다.
+ */
+export function showsPeriodTimeNote(
+  value: Pick<ActivityPanelDraft, "applyStart" | "applyDeadline">,
+  aiFilled: ReadonlySet<AiFilledField> | undefined
+): boolean {
+  if (!aiFilled) return false;
+  const midnight = aiFilled.has("applyStart") && value.applyStart.endsWith("T00:00");
+  const endOfDay = aiFilled.has("applyDeadline") && value.applyDeadline.endsWith("T23:59");
+  return midnight || endOfDay;
+}
+
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
 function weekday(date: string): string {
@@ -322,6 +375,7 @@ export function ActivityPanel({
   onChange,
   aiFilled,
   fieldErrors,
+  dateNote,
 }: {
   value: ActivityPanelDraft;
   onChange: (next: ActivityPanelDraft) => void;
@@ -339,6 +393,13 @@ export function ActivityPanel({
    * 결과다. 둘을 한 자리에 합치면 왜 막혔는지 알 수 없다.
    */
   fieldErrors?: Partial<Record<"date" | "startTime", string>>;
+  /**
+   * 날짜 칸 아래 한 줄 안내. 지금은 "원문의 요일과 달라요" 하나다.
+   *
+   * `fieldErrors` 와 섞지 않는다 — 그건 저장이 막힌 이유고, 이건 AI 가 읽은 것과
+   * 원문이 어긋났다는 귀띔이다. 저장은 막지 않는다.
+   */
+  dateNote?: string;
 }) {
   // 마감 칩을 누를 수 없을 때 보여주는 안내. 입력하면 사라진다.
   const [chipError, setChipError] = useState(false);
@@ -355,6 +416,19 @@ export function ActivityPanel({
   // KST 기준으로 본다. 브라우저 시간대가 다를 수 있고, AI 가 연도를 잘못 집으면
   // 작년 날짜가 들어온다. 그때 눈에 띄게 하려는 것이다.
   const isPastDate = !!value.date && value.date < todayInKst();
+
+  /**
+   * 신청 기간이 이미 지났는가. **활동 날짜와 따로 봐야 한다.**
+   *
+   * 예전에는 과거 경고가 날짜 칸에만 있었다. 그래서 마감이 과거로 들어가면
+   * **아무 안내 없이 접수가 닫힌 글**이 됐다 — 학생에게는 신청 버튼이 안 보이고,
+   * 교사는 왜 그런지 알 수 없다. 저장은 막지 않는다(지난 행사 기록이 있다).
+   *
+   * `datetime-local` 과 같은 모양이라 문자열끼리 비교한다.
+   */
+  const now = nowInKst();
+  const pastApplyStart = !!value.applyStart && value.applyStart < now;
+  const pastApplyDeadline = !!value.applyDeadline && value.applyDeadline < now;
 
   /** 신청 마감을 활동 시작 기준으로 채운다. 0 이면 시작 시각 그대로. */
   const fillDeadline = (daysBefore: number) => {
@@ -385,7 +459,8 @@ export function ActivityPanel({
               <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
               <span>
                 보라색 칸은 <strong>AI가 채운 값</strong>이에요. 꼭 확인해 주세요.
-                시각이 적혀 있지 않은 신청 기간은 00:00과 23:59로 넣었어요.
+                {showsPeriodTimeNote(value, aiFilled) &&
+                  " 시각이 적혀 있지 않은 신청 기간은 00:00과 23:59로 넣었어요."}
               </span>
             </p>
           )}
@@ -407,6 +482,9 @@ export function ActivityPanel({
                 이미 지난 날짜예요. 연도를 확인해 주세요.
               </p>
             )}
+            {/* 요일이 어긋났다는 귀띔. 연도는 바꾸지 않았다 — 어느 쪽이 틀렸는지는
+                사람이 봐야 안다. */}
+            {dateNote && <p className="text-xs text-amber-700 font-medium">{dateNote}</p>}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -463,7 +541,7 @@ export function ActivityPanel({
                   type="text"
                   value={value.location}
                   onChange={(e) => set("location", e.target.value)}
-                  placeholder="제2과학실"
+                  placeholder="예: 제2과학실"
                   className={`${cls("location")} pl-8`}
                 />
               </div>
@@ -477,7 +555,7 @@ export function ActivityPanel({
                   max={1000}
                   value={value.capacity}
                   onChange={(e) => set("capacity", e.target.value)}
-                  placeholder="24"
+                  placeholder="제한 없음"
                   className={`${cls("capacity")} pl-8`}
                 />
               </div>
@@ -496,6 +574,11 @@ export function ActivityPanel({
               onChange={(e) => set("applyStart", e.target.value)}
               className={cls("applyStart")}
             />
+            {pastApplyStart && (
+              <p className="text-xs text-amber-700 font-medium">
+                이미 지난 시각이에요. 접수는 바로 열립니다.
+              </p>
+            )}
           </Field>
 
           <Field label="신청 마감" hint="(비우면 활동 시작까지)">
@@ -505,6 +588,12 @@ export function ActivityPanel({
               onChange={(e) => set("applyDeadline", e.target.value)}
               className={cls("applyDeadline")}
             />
+            {/* 마감이 과거면 **아무도 신청할 수 없다.** 가장 눈에 띄어야 한다. */}
+            {pastApplyDeadline && (
+              <p className="text-xs text-destructive font-medium">
+                이미 지난 시각이에요. 이대로 저장하면 아무도 신청할 수 없어요.
+              </p>
+            )}
           </Field>
 
           <div className="flex gap-2">
