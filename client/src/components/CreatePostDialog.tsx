@@ -63,6 +63,11 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
   // AI 가 채운 칸. 사용자가 고치면 그 칸만 빠진다.
   const [aiFilled, setAiFilled] = useState<Set<AiFilledField>>(new Set());
   const [aiTitleFilled, setAiTitleFilled] = useState(false);
+  /**
+   * AI 가 넣은 본문 글상자. 다시 돌릴 때 **그 칸만** 갈아끼우기 위해 기억한다.
+   * `text` 는 넣을 당시의 내용이다 — 사용자가 고쳤으면 달라져 있으므로 건드리지 않는다.
+   */
+  const [aiBody, setAiBody] = useState<{ id: string; text: string } | null>(null);
   const [aiBusy, setAiBusy] = useState<"image" | "text" | null>(null);
 
   // 키가 등록돼 있는지. 다이얼로그를 열 때만 묻는다.
@@ -102,6 +107,7 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     setActivity(emptyActivityPanel);
     setAiFilled(new Set());
     setAiTitleFilled(false);
+    setAiBody(null);
     setAiBusy(null);
   };
 
@@ -118,29 +124,52 @@ export function CreatePostDialog({ category, categoryLabel }: Props) {
     body: string | null;
     [k: string]: unknown;
   }) => {
-    const marked = new Set(aiFilled);
-
-    if (result.title && !form.getValues("title").trim()) {
-      form.setValue("title", result.title);
-      setAiTitleFilled(true);
+    // 제목: AI 가 넣었고 사용자가 안 고쳤으면 갈아끼운다. 직접 쓴 제목은 그대로 둔다.
+    const titleIsAis = aiTitleFilled;
+    if (titleIsAis || !form.getValues("title").trim()) {
+      form.setValue("title", result.title ?? "");
+      setAiTitleFilled(!!result.title);
     }
 
-    if (result.body) {
-      setBlocks((prev) => {
-        const emptyIdx = prev.findIndex((b) => b.type === "text" && !b.value.trim());
-        if (emptyIdx >= 0) {
-          const next = [...prev];
-          next[emptyIdx] = { ...next[emptyIdx], value: result.body! };
-          return next;
+    // 본문: AI 가 넣은 글상자가 그대로면 갈아끼우고, 사용자가 고쳤으면 손대지 않는다.
+    setBlocks((prev) => {
+      const mineIdx = aiBody
+        ? prev.findIndex((b) => b.id === aiBody.id && b.value === aiBody.text)
+        : -1;
+
+      if (mineIdx >= 0) {
+        const next = [...prev];
+        if (result.body) {
+          next[mineIdx] = { ...next[mineIdx], value: result.body };
+          setAiBody({ id: next[mineIdx].id, text: result.body });
+        } else {
+          // 새 결과에 본문이 없으면 지난 본문을 비운다. 블록은 남겨 둔다
+          // (최소 1개 규칙과 순서를 흔들지 않기 위해).
+          next[mineIdx] = { ...next[mineIdx], value: "" };
+          setAiBody(null);
         }
-        return [...prev, newEditorBlock("text", result.body!)];
-      });
-    }
+        return next;
+      }
 
-    const { next, filled } = applyAiDates(activity, result as never);
+      if (!result.body) return prev;
+
+      const emptyIdx = prev.findIndex((b) => b.type === "text" && !b.value.trim());
+      if (emptyIdx >= 0) {
+        const next = [...prev];
+        next[emptyIdx] = { ...next[emptyIdx], value: result.body };
+        setAiBody({ id: next[emptyIdx].id, text: result.body });
+        return next;
+      }
+      const block = newEditorBlock("text", result.body);
+      setAiBody({ id: block.id, text: result.body });
+      return [...prev, block];
+    });
+
+    // 활동 정보: 아직 보라색인 칸을 먼저 비우고 새 결과를 채운다.
+    // 그래야 먼저 돌린 안내문의 장소·정원·신청 기간이 남지 않는다.
+    const { next, filled } = applyAiDates(activity, result as never, aiFilled);
     setActivity(next);
-    filled.forEach((f) => marked.add(f));
-    setAiFilled(marked);
+    setAiFilled(new Set(filled));
 
     return filled.length + (result.title ? 1 : 0) + (result.body ? 1 : 0);
   };

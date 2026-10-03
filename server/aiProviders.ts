@@ -426,8 +426,9 @@ export function codeForStatus(status: number): AiFillErrorCode {
   return "bad_response";
 }
 
-/** 연도 없는 날짜를 해석할 기준 날짜. **KST 로 만든다** — Vercel 함수는 UTC 다. */
-export function todayInKst(now = new Date()): string {
-  const kst = new Date(now.getTime() + 9 * 60 * 60 * 1000);
-  return kst.toISOString().slice(0, 10);
-}
+/**
+ * 연도 없는 날짜를 해석할 기준 날짜.
+ * 브라우저도 같은 함수를 쓴다 (`shared/activity.ts`). 기준이 갈라지면
+ * AI 가 잡은 연도와 화면의 "지난 날짜" 경고가 서로 어긋난다.
+ */
+export { todayInKst } from "../shared/activity.js";

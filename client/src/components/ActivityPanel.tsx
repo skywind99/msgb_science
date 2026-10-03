@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CalendarClock, ClipboardList, Info, Loader2, Lock, MapPin, Sparkles, Users } from "lucide-react";
 import { Toggle, type ActivityDraft } from "@/components/ActivityFields";
+import { todayInKst } from "@shared/activity";
 
 /**
  * 작성 화면 오른쪽 열 — 활동 신청 설정.
@@ -84,10 +85,16 @@ export function panelToDraft(p: ActivityPanelDraft): ActivityDraft {
   };
 }
 
-/** AI 가 채울 수 있는 패널 칸. 보라색 표시도 이 이름으로 추적한다. */
-export type AiFilledField =
-  | "date" | "endDate" | "startTime" | "endTime"
-  | "location" | "capacity" | "applyStart" | "applyDeadline" | "applyNote";
+/**
+ * AI 가 채울 수 있는 패널 칸. 보라색 표시도 이 이름으로 추적한다.
+ * 모두 문자열 칸이라 비울 때 `""` 하나로 끝난다.
+ */
+export const AI_FILLED_FIELDS = [
+  "date", "endDate", "startTime", "endTime",
+  "location", "capacity", "applyStart", "applyDeadline", "applyNote",
+] as const;
+
+export type AiFilledField = (typeof AI_FILLED_FIELDS)[number];
 
 /** `POST /api/ai/fill` 이 돌려주는 모양 중 패널이 쓰는 부분. */
 export type AiDates = {
@@ -105,29 +112,56 @@ export type AiDates = {
 /**
  * AI 결과를 패널 상태로 옮긴다.
  *
- * **여기가 이 기능에서 가장 틀리기 쉬운 곳이다.** 종료 날짜를 정하는 길이 둘인데
- * 둘 다 적용되면 날이 하루 더 밀린다.
- *  - `multiDay` 가 켜져 있으면 `endDate` 를 그대로 쓴다 (`resolveEnd` 가 먼저 반환)
- *  - 꺼져 있고 종료 시각이 시작보다 이르면 **자동으로 +1일**
+ * **두 가지가 틀리기 쉽다.**
  *
- * 그래서 AI 가 `endDate` 를 줬다고 무턱대고 `multiDay` 를 켜지 않는다.
+ * 1) 종료 날짜를 정하는 길이 둘이라 겹치면 날이 하루 더 밀린다.
+ *    `multiDay` 가 켜져 있으면 `endDate` 를 그대로 쓰고, 꺼져 있으면 종료 시각이
+ *    시작보다 이를 때 **자동으로 +1일** 한다. 그래서 AI 가 `endDate` 를 줬다고
+ *    무턱대고 토글을 켜지 않는다.
+ *     - 밤을 넘기는 하루짜리 (12/19 20:00 ~ 12/20 01:00)
+ *         → 토글 끔. 자동 +1 에 맡긴다. 요약에 "다음 날 01:00" 으로 나온다.
+ *     - 진짜 여러 날 (4/2 ~ 4/3)
+ *         → 토글 켬. `endDate` 를 그대로 넣는다.
  *
- *  - 밤을 넘기는 하루짜리 (12/19 20:00 ~ 12/20 01:00)
- *      → `multiDay` 끔. 자동 +1 규칙에 맡긴다. 요약에 "다음 날 01:00" 으로 나온다.
- *  - 진짜 여러 날 (4/2 ~ 4/3)
- *      → `multiDay` 켬. `endDate` 를 그대로 넣는다.
+ * 2) **두 번째 AI 실행에서 지난 결과가 섞인다.** 새 안내문에 없는 칸은 채우지
+ *    않으므로, 먼저 돌린 안내문의 장소·정원·신청 기간이 그대로 남는다. 두 행사의
+ *    정보가 뒤섞인 글이 만들어진다. 그래서 **채우기 전에 `previouslyFilled`
+ *    (아직 보라색인 칸)을 비운다.** 사용자가 직접 고친 칸은 보라색이 이미 풀려
+ *    있으므로 그대로 남는다.
  *
- * 날짜를 못 읽었으면 비워 둔다. 연도는 서버가 KST 오늘을 기준으로 지시한다.
+ * 날짜를 못 읽었으면 날짜 관련 칸을 비운 채로 둔다. **사용자가 직접 켠 여러 날
+ * 토글과 종료 날짜는 건드리지 않는다** — AI 가 날짜를 줬을 때만 그 판정을 한다.
  */
 export function applyAiDates(
   base: ActivityPanelDraft,
-  ai: Partial<AiDates>
+  ai: Partial<AiDates>,
+  /** 아직 보라색인 칸 = AI 가 채웠고 사용자가 안 고친 칸. 새로 채우기 전에 비운다. */
+  previouslyFilled: ReadonlySet<AiFilledField> = new Set()
 ): { next: ActivityPanelDraft; filled: AiFilledField[] } {
   const next = { ...base };
+
+  // 지난 AI 결과 지우기. 사용자가 고친 칸은 보라색이 풀려 있어 여기 들어오지 않는다.
+  // (Set 을 직접 순회하지 않는 이유는 tsconfig 의 target 때문이다.)
+  AI_FILLED_FIELDS.forEach((field) => {
+    if (previouslyFilled.has(field)) next[field] = "";
+  });
+  // `endDate` 가 AI 가 채운 것이었다면 `multiDay` 도 AI 가 켠 것이다. 같이 되돌린다.
+  if (previouslyFilled.has("endDate")) {
+    next.multiDay = false;
+    next.endDate = "";
+  }
+
   const filled: AiFilledField[] = [];
 
+  /**
+   * 빈 칸에만 쓴다.
+   *
+   * 위에서 지난 AI 값을 비웠으므로, 이 시점에 값이 남아 있는 칸은
+   * **사용자가 직접 넣었거나 고친 것**이다. 그건 덮지 않는다.
+   */
   const put = <K extends AiFilledField>(key: K, value: string) => {
     if (!value) return;
+    if (next[key]) return;
     next[key] = value as ActivityPanelDraft[K];
     filled.push(key);
   };
@@ -140,25 +174,29 @@ export function applyAiDates(
   put("startTime", startTime);
   put("endTime", endTime);
 
-  // 종료 날짜 판정
-  const endDate = ai.endDate ?? "";
-  if (date && endDate && endDate !== date) {
-    // 하루 뒤 + 종료 시각이 더 이르면 자정을 넘긴 하루짜리다.
-    // 이때 multiDay 를 켜면 "여러 날 활동" 으로 잘못 보이고, 끄면 자동 +1 이
-    // 같은 결과를 만든다. 끄는 쪽이 맞다.
-    const overnight = endDate === shiftDate(date, 1) && !!startTime && !!endTime && endTime < startTime;
-    if (overnight) {
-      next.multiDay = false;
-      next.endDate = "";
-    } else {
-      next.multiDay = true;
-      next.endDate = endDate;
-      filled.push("endDate");
+  // 종료 날짜 판정은 **날짜를 실제로 써 넣었을 때만** 한다.
+  //  - AI 가 날짜를 못 읽었으면 사용자가 직접 켠 여러 날 토글을 건드리면 안 된다
+  //  - 사용자가 날짜를 직접 넣어 둬서 건너뛴 경우에도 마찬가지다.
+  //    AI 의 날짜로 판정하면 화면의 날짜와 어긋난 종료일이 들어간다
+  if (filled.includes("date")) {
+    const endDate = ai.endDate ?? "";
+    if (endDate && endDate !== date) {
+      // 하루 뒤 + 종료 시각이 더 이르면 자정을 넘긴 하루짜리다.
+      // 이때 multiDay 를 켜면 "여러 날 활동" 으로 잘못 보이고, 끄면 자동 +1 이
+      // 같은 결과를 만든다. 끄는 쪽이 맞다.
+      const overnight =
+        endDate === shiftDate(date, 1) && !!startTime && !!endTime && endTime < startTime;
+      if (overnight) {
+        next.multiDay = false;
+        next.endDate = "";
+      } else {
+        next.multiDay = true;
+        next.endDate = endDate;
+        filled.push("endDate");
+      }
     }
-  } else {
-    // 종료 날짜가 없거나 시작과 같으면 하루짜리다. 자동 +1 규칙에 맡긴다.
-    next.multiDay = false;
-    next.endDate = "";
+    // `endDate` 가 없으면 하루짜리다. 위에서 AI 가 켰던 것은 이미 되돌렸고,
+    // 사용자가 직접 켠 여러 날은 그대로 남겨 둔다.
   }
 
   put("location", ai.location ?? "");
@@ -278,6 +316,10 @@ export function ActivityPanel({
   /** 그 칸이 AI 가 채운 것이면 보라색으로. 사용자가 고치면 호출하는 쪽에서 풀린다. */
   const cls = (field: AiFilledField) => (aiFilled?.has(field) ? aiClass : inputClass);
 
+  // KST 기준으로 본다. 브라우저 시간대가 다를 수 있고, AI 가 연도를 잘못 집으면
+  // 작년 날짜가 들어온다. 그때 눈에 띄게 하려는 것이다.
+  const isPastDate = !!value.date && value.date < todayInKst();
+
   /** 신청 마감을 활동 시작 기준으로 채운다. 0 이면 시작 시각 그대로. */
   const fillDeadline = (daysBefore: number) => {
     if (!value.date || !value.startTime) {
@@ -352,6 +394,13 @@ export function ActivityPanel({
               onChange={(e) => set("date", e.target.value)}
               className={cls("date")}
             />
+            {/* 저장을 막지는 않는다. 지난 행사를 기록으로 올리는 경우가 있다.
+                다만 AI 가 연도를 잘못 집었을 때 눈에 띄어야 한다. */}
+            {isPastDate && (
+              <p className="text-xs text-amber-700 font-medium">
+                이미 지난 날짜예요. 연도를 확인해 주세요.
+              </p>
+            )}
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
