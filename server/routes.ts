@@ -23,6 +23,7 @@ import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
 import { ensureAuth, requireAdmin, resolveUser, type AuthedRequest, type AuthUser } from "./auth.js";
 import { canManagePost, manageOutcome } from "../shared/postPermissions.js";
+import { popupPointsToPost } from "../shared/postLink.js";
 import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
 import {
@@ -608,16 +609,21 @@ export async function registerRoutes(
     const success = await storage.deletePost(id);
     if (!success) return res.status(404).json({ message: "Post not found" });
 
-    // 이 게시물 링크를 가진 팝업 자동 삭제
+    // 이 게시물을 가리키는 팝업도 같이 지운다.
+    //
+    // **`includes` 로 비교하지 않는다.** 예전에는 `linkUrl.includes("/posts/1")`
+    // 이어서, 1번 글을 지우면 `/posts/12`·`/posts/123` 을 가리키던 팝업까지
+    // 사라졌다. 번호를 정확히 뽑아 같은 번호일 때만 지운다.
     try {
-      const postUrl = `/posts/${id}`;
       const allPopups = await storage.getPopups();
       for (const popup of allPopups) {
-        if (popup.linkUrl?.includes(postUrl)) {
+        if (popupPointsToPost(popup.linkUrl, id)) {
           await storage.deletePopup(popup.id);
         }
       }
     } catch (err) {
+      // 팝업 정리가 실패해도 게시물 삭제는 되돌리지 않는다. 남은 팝업은
+      // 죽은 링크가 되지만, 글이 지워진 채 응답이 500 이 되는 것보다 낫다.
       console.error("popup auto-delete error:", err);
     }
 
