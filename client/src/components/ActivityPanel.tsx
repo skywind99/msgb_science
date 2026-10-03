@@ -17,6 +17,12 @@ import { todayInKst } from "@shared/activity";
  * `datetime-local` 로 직접 고칠 수 있다.
  */
 
+/**
+ * 시작 시각을 비워 둘 수 없을 때 넣는 값. **바꿀 일이 생기면 여기만 고친다.**
+ * 화면 안내 문구도 이 상수에서 가져오므로 둘이 어긋나지 않는다.
+ */
+export const DEFAULT_START_TIME = "09:00";
+
 export type ActivityPanelDraft = Omit<ActivityDraft, "eventStart" | "eventEnd"> & {
   date: string; // yyyy-MM-dd
   startTime: string; // HH:mm
@@ -24,12 +30,23 @@ export type ActivityPanelDraft = Omit<ActivityDraft, "eventStart" | "eventEnd"> 
   /** 켜면 종료 날짜 칸이 열린다. 수련회처럼 며칠에 걸친 활동. */
   multiDay: boolean;
   endDate: string; // yyyy-MM-dd (multiDay 일 때만)
+  /**
+   * 시작 시각이 **사람이 고른 값이 아니라 기본값**이라는 표시.
+   *
+   * 신청 마감을 비우면 활동 시작이 곧 마감이다. 그래서 기본값이 들어간 채로
+   * 저장하면 교사가 의도하지 않은 시각에 접수가 닫힌다. 요약 줄에서 눈에 띄게
+   * 알려 주려고 따로 들고 있다.
+   *
+   * 저장 형태에는 들어가지 않는다 (`panelToDraft` 가 떼어낸다).
+   */
+  startTimeDefaulted: boolean;
 };
 
 export const emptyActivityPanel: ActivityPanelDraft = {
   applyEnabled: false,
   date: "",
   startTime: "",
+  startTimeDefaulted: false,
   endTime: "",
   multiDay: false,
   endDate: "",
@@ -77,7 +94,11 @@ function resolveEnd(p: ActivityPanelDraft): { endDate: string; crossesMidnight: 
 /** 패널 상태를 기존 `ActivityDraft` 로 되돌린다. 저장 경로는 그대로 쓴다. */
 export function panelToDraft(p: ActivityPanelDraft): ActivityDraft {
   const { endDate } = resolveEnd(p);
-  const { date, startTime, endTime, multiDay, endDate: _ed, ...rest } = p;
+  const {
+    date, startTime, endTime, multiDay, endDate: _ed,
+    startTimeDefaulted: _sd, // 화면용 표시라 저장 형태에는 넣지 않는다
+    ...rest
+  } = p;
   return {
     ...rest,
     eventStart: combine(date, startTime),
@@ -174,6 +195,16 @@ export function applyAiDates(
   put("startTime", startTime);
   put("endTime", endTime);
 
+  // 날짜는 읽었는데 시각이 없으면 기본값을 넣는다.
+  // 비워 두면 서버가 "활동 일시를 입력해야 합니다" 로 막아서 저장 자체가 안 된다.
+  // 사람이 고른 값이 아니므로 보라색으로 칠하고 요약 줄에서 다시 알린다.
+  next.startTimeDefaulted = false;
+  if (next.date && !next.startTime) {
+    next.startTime = DEFAULT_START_TIME;
+    next.startTimeDefaulted = true;
+    if (!filled.includes("startTime")) filled.push("startTime");
+  }
+
   // 종료 날짜 판정은 **날짜를 실제로 써 넣었을 때만** 한다.
   //  - AI 가 날짜를 못 읽었으면 사용자가 직접 켠 여러 날 토글을 건드리면 안 된다
   //  - 사용자가 날짜를 직접 넣어 둬서 건너뛴 경우에도 마찬가지다.
@@ -216,6 +247,32 @@ const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 function weekday(date: string): string {
   const d = new Date(`${date}T00:00`);
   return Number.isNaN(d.getTime()) ? "" : WEEK[d.getDay()];
+}
+
+/**
+ * 칸 하나를 바꾼 결과. 화면과 테스트가 같은 규칙을 쓰도록 순수 함수로 둔다.
+ *
+ * 날짜를 골랐는데 시작 시각이 비어 있으면 기본값을 넣는다. 비워 두면 서버가
+ * "활동 일시를 입력해야 합니다" 로 막고, 무엇보다 **신청 마감을 비우면 활동
+ * 시작이 곧 마감**이라 시각이 없는 채로 저장되면 안 된다. 바로 고칠 수 있다.
+ */
+export function applyFieldChange<K extends keyof ActivityPanelDraft>(
+  value: ActivityPanelDraft,
+  key: K,
+  v: ActivityPanelDraft[K]
+): ActivityPanelDraft {
+  const next = { ...value, [key]: v };
+
+  if (key === "date" && v && !next.startTime) {
+    next.startTime = DEFAULT_START_TIME;
+    next.startTimeDefaulted = true;
+  }
+  // 시작 시각을 직접 건드리면 더 이상 기본값이 아니다.
+  if (key === "startTime") next.startTimeDefaulted = false;
+  // 날짜를 지우면 표시도 내린다.
+  if (key === "date" && !v) next.startTimeDefaulted = false;
+
+  return next;
 }
 
 /** "10/15(목) 14:00~16:00 · 제2과학실 · 24명" */
@@ -310,7 +367,7 @@ export function ActivityPanel({
 
   const set = <K extends keyof ActivityPanelDraft>(key: K, v: ActivityPanelDraft[K]) => {
     if (key === "date" || key === "startTime") setChipError(false);
-    onChange({ ...value, [key]: v });
+    onChange(applyFieldChange(value, key, v));
   };
 
   /** 그 칸이 AI 가 채운 것이면 보라색으로. 사용자가 고치면 호출하는 쪽에서 풀린다. */
@@ -519,7 +576,16 @@ export function ActivityPanel({
           {/* 요약 */}
           <div className="flex gap-2 items-start rounded-lg bg-primary/5 text-primary px-3 py-2.5 text-xs">
             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-            <span className="font-medium break-words">{summarize(value)}</span>
+            <span className="font-medium break-words">
+              {summarize(value)}
+              {/* 기본값이 들어갔으면 눈에 띄게. 마감을 비우면 이 시각이 곧 마감이다. */}
+              {value.startTimeDefaulted && (
+                <span className="block mt-1.5 font-bold text-amber-700">
+                  시각이 없어 {DEFAULT_START_TIME}으로 넣었어요. 확인해 주세요.
+                  {!value.applyDeadline && " 신청 마감을 비우면 이 시각에 접수가 닫힙니다."}
+                </span>
+              )}
+            </span>
           </div>
 
           {/* 추가 옵션 */}
