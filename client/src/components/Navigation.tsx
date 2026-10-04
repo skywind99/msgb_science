@@ -13,6 +13,7 @@ import { PopupManager } from "@/components/PopupManager";
 import { InviteManager } from "@/components/InviteManager";
 import { AiSettings } from "@/components/AiSettings";
 import { CategoryManager } from "@/components/CategoryManager";
+import { AdminMenu, AdminMenuMobile, type AdminPanel } from "@/components/AdminMenu";
 import { PasswordChange } from "@/components/PasswordChange";
 
 /**
@@ -222,6 +223,14 @@ export function Navigation() {
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { isAdmin, logout, user } = useAdmin();
   const navItems = useNavItems();
+  /**
+   * 열려 있는 관리 창. **드롭다운이 아니라 여기가 들고 있다.**
+   *
+   * 드롭다운은 고르면 닫힌다. 모달을 그 안에 두면 같이 사라지므로, 모달은 늘
+   * 바깥에 두고 `open` 만 내려 준다.
+   */
+  const [panel, setPanel] = useState<AdminPanel | null>(null);
+  const closePanel = () => setPanel(null);
   /** 비밀번호 변경 창. 이름 배지를 눌러 연다. */
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const openCount = useOpenActivityCount();
@@ -280,22 +289,15 @@ export function Navigation() {
             </nav>
 
             {/* Right side: Admin + Mobile Menu */}
-            {/* 관리자로 들어오면 버튼이 넷 늘어난다. 이 영역이 줄어들면 안 되므로
-                shrink-0 을 걸고, 대신 메뉴 쪽이 좁아지지 않게 라벨을 nowrap 으로 뒀다. */}
+            {/* 관리 기능은 드롭다운 하나로 모았다. 전에는 버튼이 여섯 개까지 늘어서
+                좁은 화면에서 메뉴를 밀어냈고, 아이콘만 보고는 무엇이 무엇인지 알 수
+                없었다. 역할 조건도 버튼마다 흩어져 있던 것을 `AdminMenu` 한 곳으로
+                옮겼다 — 복사된 조건은 하나를 빼먹으면 구멍이 된다. */}
             <div className="flex items-center gap-1.5 shrink-0">
               {isAdmin ? (
                 <>
                   <StorageBadge />
-                  <PopupManager />
-                  {/* 초대 발급은 admin 만. */}
-                  {(!user || user.role === "admin") && <InviteManager />}
-                  {/* AI 키도 관리자만. **초대와 같은 조건을 쓴다** — 둘이 갈라지면
-                      한쪽에서만 열리는 구멍이 생긴다. */}
-                  {(!user || user.role === "admin") && <AiSettings />}
-                  {/* 게시판 관리도 admin 만. **초대·AI 설정과 같은 조건을 쓴다** —
-                      갈라지면 한쪽에서만 열리는 구멍이 생긴다.
-                      버튼이 늘어나는 문제는 커밋 ②의 "관리" 드롭다운에서 정리한다. */}
-                  {(!user || user.role === "admin") && <CategoryManager />}
+                  <AdminMenu role={user?.role} onSelect={setPanel} />
                   {/* 이름 배지를 누르면 비밀번호를 바꿀 수 있다.
                       메일 재설정이 없는 구조라(`shared/teacherId.ts`) 교사가
                       스스로 바꿀 수 있는 자리는 여기 하나뿐이다.
@@ -368,6 +370,18 @@ export function Navigation() {
                   );
                 })}
 
+                {/* 관리 목록 — 상단 드롭다운과 **같은 항목·같은 조건**을 쓴다.
+                    모바일 메뉴는 이미 펼쳐진 목록이라 여기서 또 접지 않는다. */}
+                {isAdmin && (
+                  <AdminMenuMobile
+                    role={user?.role}
+                    onSelect={(p) => {
+                      setIsMobileMenuOpen(false);
+                      setPanel(p);
+                    }}
+                  />
+                )}
+
                 {/* 좁은 화면에서는 위의 이름 배지가 숨는다. 여기에도 두지 않으면
                     태블릿으로 들어온 교사는 비밀번호를 바꿀 길이 없다. */}
                 {user && (
@@ -393,8 +407,20 @@ export function Navigation() {
         {showLoginModal && <AdminLoginModal onClose={() => setShowLoginModal(false)} />}
       </AnimatePresence>
 
-      {/* 비밀번호 변경 — 컴포넌트가 스스로 `createPortal` 로 body 에 붙는다.
-          여기서 `AnimatePresence` 로 감싸면 포털이 그 안에 들어가 버린다. */}
+      {/*
+        관리 창들. **드롭다운 밖에 둔다** — 드롭다운은 고르면 닫히고, 모달이 그 안에
+        있으면 같이 사라진다. 각 컴포넌트가 스스로 `createPortal(…, document.body)`
+        로 붙으므로 여기서 `AnimatePresence` 로 감싸지 않는다.
+
+        `isAdmin` 으로 한 번 더 감싸지 않는다 — `open` 이 false 면 아무것도 그리지
+        않고, 역할 판정은 `AdminMenu` 한 곳에만 둬야 어긋나지 않는다.
+      */}
+      <PopupManager open={panel === "popup"} onClose={closePanel} />
+      <CategoryManager open={panel === "category"} onClose={closePanel} />
+      <InviteManager open={panel === "invite"} onClose={closePanel} />
+      <AiSettings open={panel === "ai"} onClose={closePanel} />
+
+      {/* 비밀번호 변경 — "내 계정" 이라 관리 메뉴가 아니라 이름 배지에 붙어 있다. */}
       <PasswordChange open={showPasswordChange} onClose={() => setShowPasswordChange(false)} />
     </>
   );

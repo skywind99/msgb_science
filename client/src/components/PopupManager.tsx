@@ -23,8 +23,15 @@ const empty: PopupFormData = {
 
 type View = "list" | "form";
 
-export function PopupManager() {
-  const [open, setOpen] = useState(false);
+/**
+ * 열림 상태는 **`Navigation` 이 들고 있다.** 트리거 버튼이 "관리" 드롭다운으로
+ * 옮겨 갔기 때문이다.
+ *
+ * 드롭다운은 닫히면 사라지므로, 버튼이 그 안에 있고 모달이 이 컴포넌트 안에
+ * 있으면 **드롭다운을 닫는 순간 모달도 사라진다.** 그래서 상태를 위로 올렸다.
+ * (`PasswordChange` 가 이미 같은 모양이다.)
+ */
+export function PopupManager({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [view, setView] = useState<View>("list");
   const [popups, setPopups] = useState<Popup[]>([]);
   const [form, setForm] = useState<PopupFormData>(empty);
@@ -120,10 +127,22 @@ export function PopupManager() {
     toast({ title: "삭제되었습니다." }); await load();
   };
 
+  /**
+   * 닫을 때 목록으로 되돌린다. 예전에는 **여는 버튼**이 `setView("list")` 를 했는데,
+   * 그 버튼이 드롭다운으로 옮겨 가 이 컴포넌트가 더는 그 순간을 모른다.
+   * 닫을 때 되돌리면 `useEffect` 를 늘리지 않고 같은 결과가 된다.
+   */
+  const close = () => {
+    setView("list");
+    setEditId(null);
+    setForm(empty);
+    onClose();
+  };
+
   const modal = open && (
     <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 99999 }}>
       {/* 배경 */}
-      <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
+      <div className="absolute inset-0 bg-black/50" onClick={close} />
 
       {/* 모달 */}
       <div
@@ -150,7 +169,7 @@ export function PopupManager() {
                 <Plus className="w-3.5 h-3.5" /> 새 팝업
               </button>
             )}
-            <button onClick={() => setOpen(false)}
+            <button onClick={close}
               className="p-1.5 rounded-lg hover:bg-gray-200 transition-colors text-gray-500">
               <X className="w-4 h-4" />
             </button>
@@ -298,14 +317,6 @@ export function PopupManager() {
 
   return (
     <>
-      <button
-        onClick={() => { setOpen(true); setView("list"); }}
-        className="flex items-center gap-1.5 shrink-0 whitespace-nowrap px-3 py-2 rounded-full text-xs font-semibold text-muted-foreground bg-muted hover:bg-muted/80 transition-colors"
-        title="팝업 관리"
-      >
-        <Settings className="w-3.5 h-3.5" /> 팝업
-      </button>
-
       {/* Portal로 body에 직접 렌더링 → z-index 문제 없음 */}
       {createPortal(modal, document.body)}
 

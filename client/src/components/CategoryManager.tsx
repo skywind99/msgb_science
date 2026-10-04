@@ -39,13 +39,20 @@ type Draft = { id: string; label: string; hidden: boolean };
 const sameOrder = (a: Draft[], b: PublicCategory[]) =>
   a.length === b.length && a.every((d, i) => d.id === b[i].id);
 
-export function CategoryManager() {
+/**
+ * 열림 상태는 **`Navigation` 이 들고 있다.** 트리거 버튼이 "관리" 드롭다운으로
+ * 옮겨 갔기 때문이다.
+ *
+ * 드롭다운은 닫히면 사라지므로, 버튼이 그 안에 있고 모달이 이 컴포넌트 안에
+ * 있으면 **드롭다운을 닫는 순간 모달도 사라진다.** 그래서 상태를 위로 올렸다.
+ * (`PasswordChange` 가 이미 같은 모양이다.)
+ */
+export function CategoryManager({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { toast } = useToast();
   const authHeaders = useAuthHeaders();
   const { all, routeOf } = useCategories();
   const invalidate = useInvalidateCategories();
 
-  const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
@@ -86,7 +93,7 @@ export function CategoryManager() {
 
   const close = () => {
     if (saveOne.isPending || saveOrder.isPending) return;
-    setOpen(false);
+    onClose();
   };
 
   const saveOne = useMutation({
@@ -170,14 +177,6 @@ export function CategoryManager() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title="게시판 관리"
-        className="p-2 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-      >
-        <LayoutList className="w-4 h-4" />
-      </button>
-
       {/*
         **반드시 포털로 띄운다.** `glass-nav` 헤더의 `backdrop-blur-md` 가 자손
         `position: fixed` 의 기준을 뷰포트에서 네비 바로 바꾼다. 포털 없이 두면
