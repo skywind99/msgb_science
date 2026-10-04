@@ -26,10 +26,12 @@ const ToastViewport = React.forwardRef<
         가운데 글)에서 가장 먼 자리다. 오른쪽 **위**로 옮기고, 헤더 높이(`h-20`,
         80px)만큼 내려 메뉴를 가리지 않게 한다.
 
-        모바일(sm 미만)은 그대로 위쪽 전체 폭이다. 손가락이 닿는 곳이 아래라
-        아래에 두면 누르려다 알림을 건드린다.
+        모바일(sm 미만)도 위쪽 전체 폭이지만 **헤더 높이만큼 내린다.** `top-0` 이던
+        동안에는 알림이 헤더를 통째로 덮어서, 알림이 떠 있는 사이에는 로고·햄버거
+        버튼·관리 메뉴를 누를 수 없었다. 아래로 옮기지 않는 이유는 손가락이 닿는
+        곳이 아래라 누르려다 알림을 건드리기 때문이다.
       */
-      "fixed top-0 z-[100000] flex max-h-screen w-full flex-col-reverse p-4 sm:top-20 sm:right-0 sm:bottom-auto sm:flex-col md:max-w-[420px]",
+      "fixed top-20 z-[100000] flex max-h-screen w-full flex-col-reverse p-4 sm:right-0 sm:bottom-auto sm:flex-col md:max-w-[420px]",
       className
     )}
     {...props}
