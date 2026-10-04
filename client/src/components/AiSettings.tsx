@@ -51,12 +51,19 @@ function fmt(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function AiSettings() {
+/**
+ * 열림 상태는 **`Navigation` 이 들고 있다.** 트리거 버튼이 "관리" 드롭다운으로
+ * 옮겨 갔기 때문이다.
+ *
+ * 드롭다운은 닫히면 사라지므로, 버튼이 그 안에 있고 모달이 이 컴포넌트 안에
+ * 있으면 **드롭다운을 닫는 순간 모달도 사라진다.** 그래서 상태를 위로 올렸다.
+ * (`PasswordChange` 가 이미 같은 모양이다.)
+ */
+export function AiSettings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const authHeaders = useAuthHeaders();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [open, setOpen] = useState(false);
   const [drafts, setDrafts] = useState<Record<AiProvider, string>>({ groq: "", gemini: "" });
   const [confirmDelete, setConfirmDelete] = useState<AiProvider | null>(null);
 
@@ -125,21 +132,13 @@ export function AiSettings() {
   });
 
   const close = () => {
-    setOpen(false);
     setDrafts({ groq: "", gemini: "" });
     setConfirmDelete(null);
+    onClose();
   };
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title="AI 설정"
-        className="p-2 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-      >
-        <Sparkles className="w-4 h-4" />
-      </button>
-
       {/*
         **반드시 포털로 띄운다.** `glass-nav` 헤더의 `backdrop-blur-md` 가
         자손 `position: fixed` 의 기준을 뷰포트에서 네비 바로 바꿔 버린다.

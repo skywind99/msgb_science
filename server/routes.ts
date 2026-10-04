@@ -46,6 +46,14 @@ import { hashApplyPassword, verifyApplyPassword } from "./applyPassword.js";
 import { aiFillResultSchema, aiProviderSchema } from "../shared/aiForms.js";
 import { resolveAiYears } from "../shared/aiDates.js";
 import { resetPasswordBodySchema } from "../shared/inviteForms.js";
+import { reorderCategoriesSchema, updateCategorySchema } from "../shared/categoryForms.js";
+import {
+  hiddenCategoryIds,
+  loadCategories,
+  reorderCategories,
+  saveCategory,
+  toPublicCategories,
+} from "./categories.js";
 import {
   applyToPost,
   cancelApplication,
@@ -421,6 +429,57 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // ── 게시판(카테고리) ─────────────────────────────────────
+
+  /**
+   * 게시판 목록. **공개 경로다.**
+   *
+   * `ensureAuth` 가 아니라 `resolveUser` 를 쓴다 — 토큰이 없거나 틀렸으면 401 을
+   * 내지 않고 비로그인으로 본다. 메뉴를 그리는 데 쓰이므로 막으면 사이트가 빈다.
+   *
+   * 응답이 역할마다 달라지므로 **캐시를 막는다.** 막지 않으면 공용 캐시나 브라우저
+   * 캐시가 admin 의 응답(숨긴 게시판 포함)을 학생에게 줄 수 있다.
+   */
+  app.get(api.categories.list.path, async (req, res) => {
+    const user = await resolveUser(req);
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Authorization");
+    res.json(toPublicCategories(await loadCategories(), user?.role === "admin"));
+  });
+
+  /** 이름·숨김. 저장 후 **목록 전체**를 돌려줘 화면이 한 번에 맞춰지게 한다. */
+  app.patch(api.categories.update.path, requireAdmin(), async (req, res) => {
+    const user = (req as AuthedRequest).authUser!;
+    const id = String(req.params.id);
+    try {
+      const input = updateCategorySchema.parse(req.body ?? {});
+      const result = await saveCategory(id, input, user.id);
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      res.json(toPublicCategories(await loadCategories(), true));
+    } catch (err) {
+      return badRequest(res, err);
+    }
+  });
+
+  /**
+   * 순서 일괄 저장. **배열 하나로 받는다.**
+   *
+   * 경로가 `/order` 라서 `:id` 라우트보다 **먼저** 선언돼야 한다 — 아니면
+   * `PATCH /api/admin/categories/order` 가 id="order" 로 잡힌다.
+   * (여기서는 메서드가 달라 겹치지 않지만, 순서를 지켜 두는 편이 안전하다.)
+   */
+  app.put(api.categories.reorder.path, requireAdmin(), async (req, res) => {
+    const user = (req as AuthedRequest).authUser!;
+    try {
+      const { ids } = reorderCategoriesSchema.parse(req.body ?? {});
+      const result = await reorderCategories(ids, user.id);
+      if (!result.ok) return res.status(result.status).json({ message: result.message });
+      res.json(toPublicCategories(await loadCategories(), true));
+    } catch (err) {
+      return badRequest(res, err);
+    }
+  });
+
   /**
    * 로그인한 요청에만 `canDelete` 를 붙인다.
    *
@@ -734,9 +793,18 @@ export async function registerRoutes(
     res.json(await summaryFor(post));
   });
 
+  /**
+   * 활동 집계. 상단 메뉴의 숫자 배지와 `/schedule` 목록이 같이 쓴다.
+   *
+   * **숨긴 게시판의 활동은 제외한다.** 빼지 않으면 배지는 3인데 목록은 2가 되고,
+   * 학생은 무엇을 놓쳤는지 찾게 된다. 거르는 기준을 화면이 아니라 여기 두는 이유는
+   * 배지(`Navigation`)와 목록(`Schedule`)이 **같은 응답**을 쓰기 때문이다.
+   *
+   * 글과 글 주소는 그대로 살아 있다 — 이미 받은 링크로는 계속 신청할 수 있다.
+   */
   app.get(api.applications.summaries.path, async (_req, res) => {
     try {
-      res.json(await summariesForAll());
+      res.json(await summariesForAll(new Date(), await hiddenCategoryIds()));
     } catch (err) {
       console.error("applications summary error:", err);
       res.status(500).json({ message: "신청 현황을 불러올 수 없습니다." });

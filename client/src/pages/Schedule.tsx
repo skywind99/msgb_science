@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/react-query";
 import { usePosts } from "@/hooks/use-posts";
 import { activityStage, applyClosesAt } from "@shared/activity";
 import { api } from "@shared/routes";
-import { NAV_ITEMS } from "@/components/Navigation";
+import { useCategories } from "@/hooks/use-categories";
 import { type ApplicationSummary, type PublicPost } from "@shared/schema";
 
 /**
@@ -17,10 +17,6 @@ import { type ApplicationSummary, type PublicPost } from "@shared/schema";
  * 카테고리별로 흩어진 활동을 날짜순 한 줄로 모아 본다.
  * 기본은 "다가오는 활동"만 보여주고, 지난 활동은 따로 펼쳐서 본다.
  */
-
-const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  NAV_ITEMS.map((n) => [n.id, n.label])
-);
 
 const STAGE_STYLE: Record<string, { label: string; className: string }> = {
   before: { label: "신청 예정", className: "bg-amber-100 text-amber-800" },
@@ -31,7 +27,15 @@ const STAGE_STYLE: Record<string, { label: string; className: string }> = {
 
 const startOf = (p: PublicPost) => (p.eventStart ? new Date(p.eventStart) : null);
 
-function ActivityRow({ post, summary }: { post: PublicPost; summary?: ApplicationSummary }) {
+function ActivityRow({
+  post,
+  summary,
+  categoryLabel,
+}: {
+  post: PublicPost;
+  summary?: ApplicationSummary;
+  categoryLabel: string;
+}) {
   const start = startOf(post);
   const end = post.eventEnd ? new Date(post.eventEnd) : null;
   const closes = applyClosesAt(post);
@@ -68,7 +72,7 @@ function ActivityRow({ post, summary }: { post: PublicPost; summary?: Applicatio
             {badge.label}
           </span>
           <span className="text-[11px] font-semibold text-muted-foreground">
-            {CATEGORY_LABELS[post.category] ?? post.category}
+            {categoryLabel}
           </span>
           {post.hasApplyPassword && <Lock className="w-3 h-3 text-muted-foreground" />}
         </div>
@@ -124,6 +128,17 @@ function ActivityRow({ post, summary }: { post: PublicPost; summary?: Applicatio
 export default function Schedule() {
   const { data: posts, isLoading } = usePosts();
   const [showPast, setShowPast] = useState(false);
+  const { visible, labelOf } = useCategories();
+  /**
+   * 보이는 게시판의 id.
+   *
+   * **숨긴 게시판의 활동은 목록에서 뺀다.** 서버도 집계(`summaries`)에서 빼므로
+   * 상단 배지 숫자와 이 목록이 같아진다. 한쪽만 거르면 "활동 신청 3" 을 눌렀는데
+   * 2개만 보여서 학생이 무엇을 놓쳤는지 찾게 된다.
+   *
+   * 글과 글 주소는 그대로다 — 이미 받은 링크로는 계속 신청할 수 있다.
+   */
+  const visibleIds = useMemo(() => new Set(visible.map((c) => c.id)), [visible]);
 
   // 남은 자리는 활동마다 따로 묻지 않고 한 번에 받는다. 집계라 개인정보가 없다.
   const { data: summaries } = useQuery<ApplicationSummary[]>({
@@ -139,7 +154,9 @@ export default function Schedule() {
   const openCount = (summaries ?? []).filter((s) => s.isOpen).length;
 
   const { upcoming, past } = useMemo(() => {
-    const activities = (posts ?? []).filter((p) => p.applyEnabled && p.eventStart);
+    const activities = (posts ?? []).filter(
+      (p) => p.applyEnabled && p.eventStart && visibleIds.has(p.category)
+    );
     const now = new Date();
     const isPast = (p: PublicPost) => {
       const finish = p.eventEnd ? new Date(p.eventEnd) : startOf(p);
@@ -153,7 +170,7 @@ export default function Schedule() {
       // 지난 활동은 최근 것이 위로
       past: activities.filter(isPast).sort((a, b) => byStartAsc(b, a)),
     };
-  }, [posts]);
+  }, [posts, visibleIds]);
 
   return (
     <div className="min-h-screen bg-background pb-20">
@@ -202,7 +219,7 @@ export default function Schedule() {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: Math.min(idx, 6) * 0.05 }}
                   >
-                    <ActivityRow post={post} summary={summaryByPost.get(post.id)} />
+                    <ActivityRow post={post} summary={summaryByPost.get(post.id)} categoryLabel={labelOf(post.category)} />
                   </motion.div>
                 ))
               ) : (
@@ -227,7 +244,7 @@ export default function Schedule() {
                 {showPast && (
                   <div className="space-y-3 opacity-70">
                     {past.map((post) => (
-                      <ActivityRow key={post.id} post={post} summary={summaryByPost.get(post.id)} />
+                      <ActivityRow key={post.id} post={post} summary={summaryByPost.get(post.id)} categoryLabel={labelOf(post.category)} />
                     ))}
                   </div>
                 )}

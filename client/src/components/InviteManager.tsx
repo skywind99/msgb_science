@@ -2,7 +2,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Trash2, UserPlus, X } from "lucide-react";
+import { Check, Copy, Eye, EyeOff, KeyRound, Loader2, Trash2, X } from "lucide-react";
 import { checkNewPassword } from "@shared/passwordRule";
 import { api, buildUrl } from "@shared/routes";
 import type {
@@ -90,12 +90,19 @@ function FreshLink({ link }: { link: string }) {
   );
 }
 
-export function InviteManager() {
+/**
+ * 열림 상태는 **`Navigation` 이 들고 있다.** 트리거 버튼이 "관리" 드롭다운으로
+ * 옮겨 갔기 때문이다.
+ *
+ * 드롭다운은 닫히면 사라지므로, 버튼이 그 안에 있고 모달이 이 컴포넌트 안에
+ * 있으면 **드롭다운을 닫는 순간 모달도 사라진다.** 그래서 상태를 위로 올렸다.
+ * (`PasswordChange` 가 이미 같은 모양이다.)
+ */
+export function InviteManager({ open, onClose }: { open: boolean; onClose: () => void }) {
   const authHeaders = useAuthHeaders();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const [open, setOpen] = useState(false);
   const [memo, setMemo] = useState("");
   const [role, setRole] = useState<"teacher" | "admin">("teacher");
   const [days, setDays] = useState("7");
@@ -245,21 +252,14 @@ export function InviteManager() {
   });
 
   const close = () => {
-    setOpen(false);
     setFresh(null);
     setTempPassword(null);
+    closeReset();
+    onClose();
   };
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        title="교사 관리"
-        className="p-2 rounded-full text-primary bg-primary/10 hover:bg-primary/20 transition-colors"
-      >
-        <UserPlus className="w-4 h-4" />
-      </button>
-
       {/*
         **반드시 포털로 띄운다.**
 

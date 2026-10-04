@@ -6,24 +6,48 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import type { ApplicationSummary } from "@shared/schema";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
+import { useCategories } from "@/hooks/use-categories";
+import { CATEGORY_DEFAULTS } from "@shared/categories";
 import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
 import { InviteManager } from "@/components/InviteManager";
 import { AiSettings } from "@/components/AiSettings";
+import { CategoryManager } from "@/components/CategoryManager";
+import { AdminMenu, AdminMenuMobile, type AdminPanel } from "@/components/AdminMenu";
 import { PasswordChange } from "@/components/PasswordChange";
 
+/**
+ * 메뉴 기본값. **게시판 이름의 단일 출처는 `shared/categories.ts` 다.**
+ *
+ * 홈과 활동 신청은 게시판이 아니라 기능 페이지라 여기만 있다 (DB 의
+ * `CHECK (id not in ('home','schedule'))` 가 행으로 들어올 길도 막아 둔다).
+ *
+ * "일정" 은 보기만 하는 곳처럼 들려서 "신청" 으로 바꿨다. 옆의 숫자(지금 신청할 수
+ * 있는 활동 수)와 함께 학생이 메뉴만 보고도 새 활동이 열린 걸 알아채게 하려는 것.
+ * 경로는 `/schedule` 그대로다 — 이미 나간 링크가 깨지면 안 된다.
+ *
+ * **실제로 그리는 것은 `useNavItems()` 다.** 이 상수는 폴백이자 고정 항목이다.
+ */
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
-  // "일정" 은 보기만 하는 곳처럼 들려서 "신청" 으로 바꿨다. 옆의 숫자(지금 신청할 수
-  // 있는 활동 수)와 함께 학생이 메뉴만 보고도 새 활동이 열린 걸 알아채게 하려는 것.
-  // 경로는 `/schedule` 그대로다 — 이미 나간 링크가 깨지면 안 된다.
   { id: "schedule", label: "활동 신청", path: "/schedule" },
-  { id: "lab_intro", label: "과학실 소개", path: "/lab" },
-  { id: "science_class", label: "과학중점반활동", path: "/class" },
-  { id: "career_program", label: "창의융합진로프로그램", path: "/career" },
-  { id: "student_program", label: "학생중심프로그램", path: "/student" },
-  { id: "local_community", label: "지역교육공동체활동", path: "/community" },
+  ...CATEGORY_DEFAULTS.map((c) => ({ id: c.id, label: c.label, path: c.path })),
 ];
+
+/**
+ * 지금 그릴 메뉴. 홈·활동 신청 + **숨기지 않은** 게시판을 저장된 순서로.
+ *
+ * 숨긴 게시판은 **admin 에게도 보이지 않는다.** admin 이 학생과 같은 메뉴를 봐야
+ * 숨겼는지 확인할 수 있다. 들어가는 길은 게시판 관리 창의 "열기" 다.
+ */
+function useNavItems() {
+  const { visible, routeOf } = useCategories();
+  return [
+    { id: "home", label: "홈", path: "/" },
+    { id: "schedule", label: "활동 신청", path: "/schedule" },
+    ...visible.map((c) => ({ id: c.id, label: c.label, path: routeOf(c.id) })),
+  ];
+}
 
 /**
  * 지금 신청할 수 있는 활동 수.
@@ -198,6 +222,15 @@ export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { isAdmin, logout, user } = useAdmin();
+  const navItems = useNavItems();
+  /**
+   * 열려 있는 관리 창. **드롭다운이 아니라 여기가 들고 있다.**
+   *
+   * 드롭다운은 고르면 닫힌다. 모달을 그 안에 두면 같이 사라지므로, 모달은 늘
+   * 바깥에 두고 `open` 만 내려 준다.
+   */
+  const [panel, setPanel] = useState<AdminPanel | null>(null);
+  const closePanel = () => setPanel(null);
   /** 비밀번호 변경 창. 이름 배지를 눌러 연다. */
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const openCount = useOpenActivityCount();
@@ -227,7 +260,7 @@ export function Navigation() {
 
             {/* Desktop Nav — xl 미만에서는 햄버거로 넘긴다 (lg 에서는 라벨이 깨졌다) */}
             <nav className="hidden xl:flex items-center gap-0.5">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const isActive = location === item.path;
                 return (
                   <Link
@@ -256,18 +289,15 @@ export function Navigation() {
             </nav>
 
             {/* Right side: Admin + Mobile Menu */}
-            {/* 관리자로 들어오면 버튼이 넷 늘어난다. 이 영역이 줄어들면 안 되므로
-                shrink-0 을 걸고, 대신 메뉴 쪽이 좁아지지 않게 라벨을 nowrap 으로 뒀다. */}
+            {/* 관리 기능은 드롭다운 하나로 모았다. 전에는 버튼이 여섯 개까지 늘어서
+                좁은 화면에서 메뉴를 밀어냈고, 아이콘만 보고는 무엇이 무엇인지 알 수
+                없었다. 역할 조건도 버튼마다 흩어져 있던 것을 `AdminMenu` 한 곳으로
+                옮겼다 — 복사된 조건은 하나를 빼먹으면 구멍이 된다. */}
             <div className="flex items-center gap-1.5 shrink-0">
               {isAdmin ? (
                 <>
                   <StorageBadge />
-                  <PopupManager />
-                  {/* 초대 발급은 admin 만. */}
-                  {(!user || user.role === "admin") && <InviteManager />}
-                  {/* AI 키도 관리자만. **초대와 같은 조건을 쓴다** — 둘이 갈라지면
-                      한쪽에서만 열리는 구멍이 생긴다. */}
-                  {(!user || user.role === "admin") && <AiSettings />}
+                  <AdminMenu role={user?.role} onSelect={setPanel} />
                   {/* 이름 배지를 누르면 비밀번호를 바꿀 수 있다.
                       메일 재설정이 없는 구조라(`shared/teacherId.ts`) 교사가
                       스스로 바꿀 수 있는 자리는 여기 하나뿐이다.
@@ -320,7 +350,7 @@ export function Navigation() {
               className="xl:hidden border-t bg-white"
             >
               <nav className="flex flex-col px-4 py-4 space-y-2">
-                {NAV_ITEMS.map((item) => {
+                {navItems.map((item) => {
                   const isActive = location === item.path;
                   return (
                     <Link
@@ -339,6 +369,18 @@ export function Navigation() {
                     </Link>
                   );
                 })}
+
+                {/* 관리 목록 — 상단 드롭다운과 **같은 항목·같은 조건**을 쓴다.
+                    모바일 메뉴는 이미 펼쳐진 목록이라 여기서 또 접지 않는다. */}
+                {isAdmin && (
+                  <AdminMenuMobile
+                    role={user?.role}
+                    onSelect={(p) => {
+                      setIsMobileMenuOpen(false);
+                      setPanel(p);
+                    }}
+                  />
+                )}
 
                 {/* 좁은 화면에서는 위의 이름 배지가 숨는다. 여기에도 두지 않으면
                     태블릿으로 들어온 교사는 비밀번호를 바꿀 길이 없다. */}
@@ -365,8 +407,20 @@ export function Navigation() {
         {showLoginModal && <AdminLoginModal onClose={() => setShowLoginModal(false)} />}
       </AnimatePresence>
 
-      {/* 비밀번호 변경 — 컴포넌트가 스스로 `createPortal` 로 body 에 붙는다.
-          여기서 `AnimatePresence` 로 감싸면 포털이 그 안에 들어가 버린다. */}
+      {/*
+        관리 창들. **드롭다운 밖에 둔다** — 드롭다운은 고르면 닫히고, 모달이 그 안에
+        있으면 같이 사라진다. 각 컴포넌트가 스스로 `createPortal(…, document.body)`
+        로 붙으므로 여기서 `AnimatePresence` 로 감싸지 않는다.
+
+        `isAdmin` 으로 한 번 더 감싸지 않는다 — `open` 이 false 면 아무것도 그리지
+        않고, 역할 판정은 `AdminMenu` 한 곳에만 둬야 어긋나지 않는다.
+      */}
+      <PopupManager open={panel === "popup"} onClose={closePanel} />
+      <CategoryManager open={panel === "category"} onClose={closePanel} />
+      <InviteManager open={panel === "invite"} onClose={closePanel} />
+      <AiSettings open={panel === "ai"} onClose={closePanel} />
+
+      {/* 비밀번호 변경 — "내 계정" 이라 관리 메뉴가 아니라 이름 배지에 붙어 있다. */}
       <PasswordChange open={showPasswordChange} onClose={() => setShowPasswordChange(false)} />
     </>
   );

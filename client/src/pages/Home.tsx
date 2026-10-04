@@ -6,6 +6,7 @@ import { PostCard, PostCardSkeleton } from "@/components/PostCard";
 import { CreatePostDialog } from "@/components/CreatePostDialog";
 import { UpcomingActivities } from "@/components/UpcomingActivities";
 import { useAdmin } from "@/contexts/admin";
+import { useCategories } from "@/hooks/use-categories";
 import { useEffect, useState, useCallback } from "react";
 
 const FEATURES = [
@@ -195,6 +196,15 @@ export default function Home() {
   const { data: posts, isLoading } = usePosts("home");
   const { isAdmin } = useAdmin();
   const { newsList, loading: newsLoading } = useScienceNews();
+  /**
+   * 숨긴 게시판으로 가는 버튼을 감춘다.
+   *
+   * 버튼의 글귀("과학실 둘러보기")는 게시판 이름이 아니라 **문구**라 그대로 둔다.
+   * 다만 그 게시판을 숨겼으면 눌러도 "준비 중" 이 나오므로 버튼 자체를 감춘다 —
+   * 막다른 길을 남기지 않는다.
+   */
+  const { visible, routeOf } = useCategories();
+  const canGo = (id: string) => visible.some((c) => c.id === id);
 
   return (
     <div className="min-h-screen pb-20">
@@ -234,19 +244,23 @@ export default function Home() {
               </p>
 
               <div className="flex flex-wrap items-center gap-4">
-                <Link
-                  href="/lab"
-                  className="px-8 py-4 rounded-xl font-bold bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
-                >
-                  과학실 둘러보기
-                  <ArrowRight className="w-5 h-5" />
-                </Link>
-                <Link
-                  href="/class"
-                  className="px-8 py-4 rounded-xl font-bold bg-white text-foreground border-2 border-border shadow-sm hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-1 transition-all duration-300"
-                >
-                  교육과정 안내
-                </Link>
+                {canGo("lab_intro") && (
+                  <Link
+                    href={routeOf("lab_intro")}
+                    className="px-8 py-4 rounded-xl font-bold bg-primary text-primary-foreground shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex items-center gap-2"
+                  >
+                    과학실 둘러보기
+                    <ArrowRight className="w-5 h-5" />
+                  </Link>
+                )}
+                {canGo("science_class") && (
+                  <Link
+                    href={routeOf("science_class")}
+                    className="px-8 py-4 rounded-xl font-bold bg-white text-foreground border-2 border-border shadow-sm hover:border-primary/30 hover:bg-primary/5 hover:-translate-y-1 transition-all duration-300"
+                  >
+                    교육과정 안내
+                  </Link>
+                )}
               </div>
             </motion.div>
 
@@ -317,9 +331,14 @@ export default function Home() {
             </div>
             <div className="flex items-center gap-4">
               {isAdmin && <CreatePostDialog category="home" categoryLabel="학교 새소식" />}
-              <Link href="/class" className="hidden sm:flex items-center gap-1 text-primary font-bold hover:gap-2 transition-all">
-                모든 소식 보기 <ArrowRight className="w-4 h-4" />
-              </Link>
+              {canGo("science_class") && (
+                <Link
+                  href={routeOf("science_class")}
+                  className="hidden sm:flex items-center gap-1 text-primary font-bold hover:gap-2 transition-all"
+                >
+                  모든 소식 보기 <ArrowRight className="w-4 h-4" />
+                </Link>
+              )}
             </div>
           </div>
 
