@@ -330,6 +330,50 @@ AI 로 채운 뒤 대표 이미지를 다른 사진으로 바꾸거나 지워도
 
 ---
 
+## 보류: 2단계 게시판 생성·삭제 — **1단계 배포 후에 본다**
+
+1단계(이름·숨김·순서)는 `feat/category-admin` 에서 한다. 아래는 그 다음이고,
+**지금 구현하지 않는다.**
+
+### 파일별로 필요한 변경
+
+| 파일 | 지금 | 2단계에 필요한 것 |
+|---|---|---|
+| `client/src/App.tsx` | `/lab`·`/class`·`/career`·`/student`·`/community` **5개 고정 라우트** | `/board/:slug` 동적 라우트. **기존 5개는 별칭으로 유지** — 이미 나간 링크·북마크·푸터가 깨지면 안 된다. `categories` 에 `slug` 열 추가 |
+| `client/src/components/PostCard.tsx` | `CATEGORY_META` 가 색·아이콘을 **5개 고정**으로 들고 있다 | 새 게시판은 메타가 없어 **카드가 흰 사각형**이 된다. `categories` 에 `icon`·`color` 열을 두거나, id 해시로 팔레트에서 고르는 기본값 |
+| `client/src/pages/PostDetail.tsx` | 라벨·돌아가기 주소 맵 | 1단계의 `useCategories()` 가 이미 처리한다. 남는 것은 **없어진 게시판의 글** — "목록으로" 를 홈으로 보낸다 |
+| `server/routes.ts` (글 목록·생성) | `category` 를 **검증 없이** `storage.getPosts` 로 넘긴다 | **존재 검사 추가.** 지금은 아무 문자열로도 글을 만들 수 있다 |
+| `shared/routes.ts` | `category: z.string().optional()` | `categories` 에 있는 id 만 받는다 |
+| `server/routes.ts` 시드 | `registerRoutes()` 안에 있어 콜드 스타트마다 DB 조회 | `script/seed.ts` 로 분리 (기존 TODO 와 같은 작업) |
+| `client/src/components/CreatePostDialog.tsx` | `category` prop 를 받는다 | 변화 없음 |
+
+### 삭제는 "글이 0개일 때만"
+
+글이 있는 게시판을 지우면 그 글들이 **어디에도 안 보이면서 DB 에는 남는다.**
+가장 나쁜 상태다. 글 주소(`/posts/:id`)로는 열리는데 목록이 없어서, 교사는 글이
+사라진 줄 알고 다시 쓴다.
+
+### 글 이동을 **먼저** 만든다
+
+삭제에 0개 조건을 걸면 **비울 방법이 필요해진다.** 지금 `local_community` 만
+비어 있고 나머지는 글이 있다(2026-10-04: `lab_intro` 6, `science_class` 2,
+`career_program` 1, `student_program` 1, `home` 1).
+
+이동이 먼저 있으면
+- 삭제가 "비우고 → 지우기" 두 단계로 자연스러워진다
+- **삭제 없이도 쓸모가 있다** — 엉뚱한 게시판에 올린 글을 옮기는 일이 실제로 생긴다
+- 구현이 작다. `PATCH /api/posts/:id` 의 `category` 를 admin 에게만 허용하는 수준이고
+  **새 라우트가 필요 없다.** (`PATCH` 는 로그인한 교사 모두에게 열려 있으므로,
+  `category` 항목만 역할을 따로 봐야 한다 — 다른 교사가 남의 글을 다른 게시판으로
+  옮기면 글이 사라진 것처럼 보인다)
+
+### 안 하는 것
+- 게시판별 권한(누가 어느 게시판에 쓸 수 있는지) — 지금은 로그인한 교사 모두가
+  모든 게시판에 쓴다. 분리하자는 요구가 나온 적이 없다
+- 게시판 안의 하위 분류
+
+---
+
 ## 결정 필요: 팝업 권한 정책 (admin 전용으로 올릴지)
 
 게시물 삭제는 작성자·`admin` 으로 좁혔다. **팝업 쓰기 3개는 아직 로그인한 교사

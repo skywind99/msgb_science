@@ -111,6 +111,54 @@ export type ResetPasswordResponse = {
   tempPassword: string | null;
 };
 
+// ── 게시판 (카테고리) ─────────────────────────────────────
+//
+// 게시판의 **이름·숨김·순서만** 담는다. 글은 `posts.category` 가 id 문자열로
+// 가리키고, 그 관계에 **외래키를 걸지 않는다.** 두 가지 이유다.
+//  - 코드만 되돌려도 원래 메뉴로 복귀해야 한다. 제약이 남으면 그게 안 된다
+//  - 2단계(게시판 삭제)에서 제약이 글을 잠근다. 삭제는 "글이 0개일 때만" 이라는
+//    규칙을 코드로 지키는 쪽이 낫다
+//
+// **행이 없거나 조회가 실패하면 코드 기본값으로 동작한다**(fail open). 메뉴는
+// 사이트의 뼈대라서, DB 가 흔들릴 때 사라지는 것이 가장 나쁘다. 기본 이름의 단일
+// 출처는 `NAV_ITEMS` 다 — 마이그레이션의 시드도 같은 값을 넣는다.
+export const categories = pgTable("categories", {
+  // 글이 가리키는 그 문자열. `lab_intro` 등. **주소(/lab)와는 별개이고 바뀌지 않는다.**
+  id: text("id").primaryKey(),
+  // 화면에 보이는 이름. 교사가 바꾼다.
+  label: text("label").notNull(),
+  // 목록에서만 빠진다. **글과 글 주소는 그대로 살아 있다.**
+  hidden: boolean("hidden").notNull().default(false),
+  // 10, 20, 30 … 으로 띄워 둔다. 2단계에서 중간에 끼울 때 전체를 다시 쓰지 않는다.
+  sortOrder: integer("sort_order").notNull(),
+  updatedBy: uuid("updated_by").references(() => profiles.id, { onDelete: "set null" }),
+  updatedAt: timestamp("updated_at"),
+}, (t) => ({
+  // **홈은 게시판이 아니다.** 숨기거나 지울 수 없어야 하는데, 그걸 조건문으로만
+  // 지키면 나중에 누군가 조건을 지운다. 홈이 숨겨지면 사이트 첫 화면이 사라진다.
+  // `schedule` 도 같은 이유로 막는다 — 기능 페이지지 게시판이 아니다.
+  notReserved: check("categories_not_reserved", sql`${t.id} not in ('home', 'schedule')`),
+  // zod 를 우회하는 경로(직접 SQL, 나중에 생길 라우트)에서도 지켜지게 한다.
+  // 공백만 있는 이름은 메뉴에서 빈칸으로 보인다.
+  labelLength: check(
+    "categories_label_length",
+    sql`char_length(btrim(${t.label})) between 1 and 16`
+  ),
+}));
+
+export type Category = typeof categories.$inferSelect;
+
+/** 화면이 받는 모양. 비로그인 응답에는 `hidden` 이 없다. */
+export type PublicCategory = {
+  id: string;
+  label: string;
+  /** admin 응답에만 붙는다. 비로그인·교사에게는 키 자체가 없다. */
+  hidden?: boolean;
+};
+
+/** 이름 길이 상한. 화면·zod·DB CHECK 가 같은 값을 쓴다. */
+export const CATEGORY_LABEL_MAX = 16;
+
 // ── 게시물 (공지 + 활동 겸용) ─────────────────────────────
 // applyEnabled 가 false 면 지금까지와 동일한 일반 공지글.
 // true 면 하단에 신청 폼이 붙고 정원·마감이 적용된다.
