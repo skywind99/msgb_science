@@ -89,3 +89,95 @@ export function planPopupRegister(
  * `insertPopupSchema` 가 `^(https?:\/\/|\/)` 를 받으므로 `/posts/12` 는 통과한다.
  */
 export const postPopupLink = (postId: number) => `/posts/${postId}`;
+
+// ── 팝업 링크를 누를 때 / 지금 보는 페이지인지 ──────────────
+//
+// 팝업은 `App` 전체에 마운트돼 있다. 그래서 링크로 간 페이지에서도 같은 팝업이
+// 다시 뜬다. 아래 함수들이 그 판정을 맡는다. 화면이 아니라 여기 두는 이유는
+// **브라우저 없이 시험해야** 하기 때문이다 — 틀리면 팝업이 안 뜨거나 안 닫힌다.
+
+/**
+ * **라우터에 넘길** 사이트 안 경로. 쿼리와 해시를 살린다.
+ *
+ * 사이트 안 주소가 아니면 `null` 이다 — 그때는 같은 탭에서 옮기면 안 된다.
+ * 상대 경로(`/posts/12?x=1`)와 **우리 origin 과 같은** 전체 주소만 받는다.
+ */
+export function toInternalPath(
+  raw: string | null | undefined,
+  origin?: string | null
+): string | null {
+  if (!raw) return null;
+  const value = raw.trim();
+  if (!value) return null;
+
+  if (value.startsWith("/")) return value;
+
+  // 전체 주소. 우리 origin 과 같을 때만 경로를 쓴다.
+  if (!origin) return null;
+  try {
+    const url = new URL(value);
+    const here = new URL(origin);
+    if (url.origin !== here.origin) return null;
+    return url.pathname + url.search + url.hash;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 비교할 수 있는 경로만 남긴다. 쿼리·해시·호스트·뒤 슬래시를 떼어낸다.
+ *
+ * 사이트 안 주소가 아니면 `null` 이다. `null` 은 "비교할 수 없다" 는 뜻이고,
+ * 비교하는 쪽은 그때 **같지 않다**고 본다 — 모르면 팝업을 띄우는 쪽이 안전하다.
+ */
+export function toComparablePath(
+  raw: string | null | undefined,
+  origin?: string | null
+): string | null {
+  const full = toInternalPath(raw, origin);
+  if (full === null) return null;
+
+  let path = full.split(/[?#]/)[0];
+  // 뒤 슬래시 하나는 같은 경로로 본다. 루트(`/`)는 남긴다.
+  if (path.length > 1 && path.endsWith("/")) path = path.slice(0, -1);
+  return path || "/";
+}
+
+/**
+ * 사이트 안 링크인가. 같은 탭에서 열지, 새 탭으로 열지를 정한다.
+ *
+ * 상대 경로(`/posts/12`)와 **우리 origin 과 같은** 전체 주소만 "안" 이다.
+ * 예전에 Preview 주소로 만들어진 팝업은 운영에서 보면 **밖**이 된다 — 그게 맞다.
+ * 다른 사이트이고, 같은 탭에서 열면 교사가 사이트를 떠난 줄 모른다.
+ */
+export function isInternalLink(
+  raw: string | null | undefined,
+  origin?: string | null
+): boolean {
+  return toComparablePath(raw, origin) !== null;
+}
+
+/**
+ * 이 팝업이 **지금 보고 있는 페이지**를 가리키는가. 그러면 띄우지 않는다.
+ *
+ * 글 페이지에서는 **번호로 비교한다** — 경로 문자열만 보면 `/posts/1` 과
+ * `/posts/12` 를 섞을 위험이 남고, `postIdFromLink` 가 그걸 이미 정확히 다룬다.
+ * 글 페이지가 아니면 경로를 그대로 비교한다(`/lab` 등).
+ *
+ * **사이트 밖 링크는 늘 `false`** 다. 먼저 걸러야 한다 — 그러지 않으면
+ * `https://다른사이트/posts/79` 가 우리 `/posts/79` 와 같은 글로 잡힌다.
+ */
+export function popupTargetsCurrentPage(
+  linkUrl: string | null | undefined,
+  currentPath: string,
+  origin?: string | null
+): boolean {
+  if (!isInternalLink(linkUrl, origin)) return false;
+
+  const currentId = postIdFromLink(currentPath);
+  if (currentId !== null) return popupPointsToPost(linkUrl, currentId);
+
+  const link = toComparablePath(linkUrl, origin);
+  const here = toComparablePath(currentPath, origin);
+  return link !== null && here !== null && link === here;
+}
