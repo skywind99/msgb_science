@@ -45,6 +45,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
 import { useCategories } from "@/hooks/use-categories";
+import { planPopupRegister, postPopupLink } from "@shared/postLink";
 
 // 이름과 돌아가기 주소는 `useCategories()` 에서 온다. 상수를 여기 두면 교사가
 // 이름을 바꿔도 글 상세만 옛 이름으로 남는다.
@@ -152,15 +153,70 @@ export default function PostDetail() {
   });
 
 
+  /** 알림을 놓치기 쉬워 성공은 더 길게 띄운다. 기본값은 Radix 의 5초다. */
+  const SUCCESS_MS = 8000;
+  /** 문구를 한 곳에 둔다. 교사 계정도 "관리" 안에 팝업 관리가 보인다. */
+  const WHERE = "상단 '관리' 메뉴의 '팝업 관리'에서 확인하거나 끌 수 있어요.";
+
+  /**
+   * 이 글을 팝업으로 등록한다.
+   *
+   * **먼저 같은 글의 팝업이 있는지 본다.** 전에는 누를 때마다 새로 만들어서, 알림을
+   * 못 본 교사가 다시 누르면 같은 팝업이 두 개 떴다. 방문자는 같은 안내를 두 번
+   * 닫아야 한다.
+   *
+   * 꺼진 팝업과 켜진 팝업을 구분해 알린다 — "이미 있다" 만 말하면 등록했는데 왜 안
+   * 뜨는지 알 수 없다.
+   *
+   * 판정은 `planPopupRegister` 가 한다(`shared/postLink.ts`). 글 번호를 정확히
+   * 비교하므로 `/posts/1` 이 `/posts/12` 와 섞이지 않는다.
+   */
   const registerAsPopup = async () => {
     if (!post) return;
     setPopupRegistering(true);
     try {
+      // 1) 지금 있는 팝업 확인. 실패하면 중복 검사를 건너뛰지 않고 멈춘다 —
+      //    모르는 채로 만들면 두 개가 될 수 있다.
+      const listRes = await fetch("/api/admin/popups", { headers: authHeaders });
+      if (!listRes.ok) {
+        toast({
+          title: "팝업 목록을 확인할 수 없어요.",
+          description: "잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const popups = (await listRes.json()) as Array<{
+        id: number;
+        linkUrl: string | null;
+        active: boolean;
+      }>;
+
+      const plan = planPopupRegister(popups, post.id);
+      if (plan.action === "exists") {
+        toast({
+          title: "이미 이 글의 팝업이 등록되어 있어요.",
+          description: WHERE,
+          duration: SUCCESS_MS,
+        });
+        return;
+      }
+      if (plan.action === "disabled") {
+        toast({
+          title: "꺼져 있는 팝업이 있어요.",
+          description: "팝업 관리에서 켜세요. 새로 만들지 않았습니다.",
+          duration: SUCCESS_MS,
+        });
+        return;
+      }
+
+      // 2) 만든다. 주소는 **상대 경로**다 — `window.location.origin` 을 붙이면
+      //    Preview 에서 등록할 때 Preview 주소가 박힌다(팝업은 운영 DB 에 있다).
       const body = {
         title: post.title,
         content: post.content?.slice(0, 200) || "",
         imageUrl: post.imageUrl || null,
-        linkUrl: `${window.location.origin}/posts/${post.id}`,
+        linkUrl: postPopupLink(post.id),
         linkLabel: "게시물 보기",
         active: true,
       };
@@ -170,7 +226,12 @@ export default function PostDetail() {
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        toast({ title: "팝업으로 등록되었습니다.", description: "팝업 관리에서 확인하세요." });
+        toast({
+          title: "팝업으로 등록되었습니다.",
+          description: WHERE,
+          variant: "success",
+          duration: SUCCESS_MS,
+        });
       } else {
         toast({ title: "팝업 등록에 실패했습니다.", variant: "destructive" });
       }

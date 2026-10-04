@@ -46,3 +46,46 @@ export function postIdFromLink(linkUrl: string | null | undefined): number | nul
 export function popupPointsToPost(linkUrl: string | null | undefined, postId: number): boolean {
   return postIdFromLink(linkUrl) === postId;
 }
+
+/**
+ * "팝업으로 등록" 을 눌렀을 때 무엇을 할지.
+ *
+ * **같은 글의 팝업을 두 번 만들지 않는다.** 전에는 누를 때마다 새로 만들어서,
+ * 알림을 못 본 교사가 다시 누르면 같은 팝업이 두 개 뜨고 방문자는 같은 안내를
+ * 두 번 닫아야 했다.
+ *
+ * 꺼진 팝업과 켜진 팝업을 **구분해서 알린다.** "이미 있다" 만 말하면, 교사는
+ * 등록했는데 왜 안 뜨는지 알 수 없다 — 꺼져 있다는 사실을 알아야 켤 수 있다.
+ *
+ * 번호 비교는 `popupPointsToPost` 를 쓴다. `includes` 로 비교하면 `/posts/1` 이
+ * `/posts/12` 와 섞인다.
+ */
+export type PopupRegisterPlan =
+  | { action: "create" }
+  | { action: "exists"; popupId: number }
+  | { action: "disabled"; popupId: number };
+
+export function planPopupRegister(
+  popups: ReadonlyArray<{ id: number; linkUrl: string | null; active: boolean }>,
+  postId: number
+): PopupRegisterPlan {
+  const mine = popups.filter((p) => popupPointsToPost(p.linkUrl, postId));
+  if (mine.length === 0) return { action: "create" };
+
+  // 켜진 것이 하나라도 있으면 그걸 알린다. 꺼진 것만 있을 때 "켜세요" 가 맞다.
+  const on = mine.find((p) => p.active);
+  if (on) return { action: "exists", popupId: on.id };
+  return { action: "disabled", popupId: mine[0].id };
+}
+
+/**
+ * 팝업이 가리킬 주소. **상대 경로로 만든다.**
+ *
+ * 예전에는 `window.location.origin` 을 붙였다. 그래서 **Preview 에서 등록하면
+ * Preview 주소가 박혔다** — 팝업은 운영 DB 에 저장되므로, 운영 사이트 방문자가
+ * 그 팝업을 눌러 Preview 로 넘어간다. 실제로 그렇게 만들어진 팝업이 하나 있었다.
+ *
+ * 상대 경로면 어느 배포에서 만들어도 그 사이트 안에서 열린다.
+ * `insertPopupSchema` 가 `^(https?:\/\/|\/)` 를 받으므로 `/posts/12` 는 통과한다.
+ */
+export const postPopupLink = (postId: number) => `/posts/${postId}`;
