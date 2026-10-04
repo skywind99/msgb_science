@@ -13,8 +13,12 @@ import AcceptInvite from "@/pages/AcceptInvite";
 import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 import { PopupDisplay } from "@/components/PopupDisplay";
+import { useCategories } from "@/hooks/use-categories";
 
 function Router() {
+  // 푸터의 "주요메뉴" 가 쓴다. 숨긴 게시판은 저절로 빠진다.
+  const { visible, routeOf } = useCategories();
+
   return (
     <div className="flex flex-col min-h-screen">
       <Navigation />
@@ -59,10 +63,17 @@ function Router() {
             <div className="flex gap-8 md:justify-end">
               <div className="space-y-3">
                 <h4 className="text-white font-bold text-sm uppercase tracking-wider">주요메뉴</h4>
+                {/* 하드코딩이던 세 줄을 목록에서 만든다. 전에는 여기 "진로프로그램" 이
+                    메뉴의 "창의융합진로프로그램" 과 **이미 달랐다.** 숨긴 게시판도
+                    자동으로 빠진다. */}
                 <ul className="space-y-2 text-sm text-muted-foreground">
-                  <li><a href="/lab" className="hover:text-white transition-colors">과학실 소개</a></li>
-                  <li><a href="/class" className="hover:text-white transition-colors">과학중점반활동</a></li>
-                  <li><a href="/career" className="hover:text-white transition-colors">진로프로그램</a></li>
+                  {visible.slice(0, 3).map((c) => (
+                    <li key={c.id}>
+                      <a href={routeOf(c.id)} className="hover:text-white transition-colors">
+                        {c.label}
+                      </a>
+                    </li>
+                  ))}
                 </ul>
               </div>
               <div className="space-y-3">

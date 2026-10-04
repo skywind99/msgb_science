@@ -44,24 +44,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
+import { useCategories } from "@/hooks/use-categories";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  home: "홈",
-  lab_intro: "과학실 소개",
-  science_class: "과학중점반활동",
-  career_program: "창의융합진로프로그램",
-  student_program: "학생중심프로그램",
-  local_community: "지역교육공동체활동",
-};
-
-const CATEGORY_ROUTES: Record<string, string> = {
-  home: "/",
-  lab_intro: "/lab",
-  science_class: "/class",
-  career_program: "/career",
-  student_program: "/student",
-  local_community: "/community",
-};
+// 이름과 돌아가기 주소는 `useCategories()` 에서 온다. 상수를 여기 두면 교사가
+// 이름을 바꿔도 글 상세만 옛 이름으로 남는다.
 
 /**
  * 글 안의 `http(s)://` 주소를 눌러 갈 수 있게 그린다.
@@ -101,6 +87,7 @@ export default function PostDetail() {
   const { toast } = useToast();
   // `isAdmin` 은 "로그인됨" 이다. 삭제 권한은 서버가 내려주는 `post.canDelete` 로 본다.
   const { isAdmin, user } = useAdmin();
+  const { labelOf, routeOf } = useCategories();
   const authHeaders = useAuthHeaders();
   /** 로그인 신원. 캐시 키에 넣어야 `canDelete` 가 로그인 전 값으로 굳지 않는다. */
   const authKey = user?.id ?? "anon";
@@ -157,7 +144,7 @@ export default function PostDetail() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/posts"] });
       toast({ title: "삭제 완료", description: "게시물이 삭제되었습니다." });
-      navigate(post ? (CATEGORY_ROUTES[post.category] ?? "/") : "/");
+      navigate(post ? routeOf(post.category) : "/");
     },
     onError: (err: Error) => {
       toast({ title: "오류", description: err.message, variant: "destructive" });
@@ -250,8 +237,8 @@ export default function PostDetail() {
     );
   }
 
-  const backRoute = CATEGORY_ROUTES[post.category] ?? "/";
-  const categoryLabel = CATEGORY_LABELS[post.category] ?? post.category;
+  const backRoute = routeOf(post.category);
+  const categoryLabel = labelOf(post.category);
   const postBlocks = post.blocks as ContentBlock[] | null;
   const displayBlocks: ContentBlock[] =
     postBlocks && postBlocks.length > 0

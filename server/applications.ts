@@ -331,8 +331,19 @@ export async function summaryFor(post: Post, now = new Date()): Promise<Applicat
  * 홈·일정 화면이 여러 활동의 남은 자리를 한 번에 보여줘야 한다.
  * 활동마다 요청을 보내면 콜드 스타트가 그만큼 늘어나므로 한 번에 내려보낸다.
  */
-export async function summariesForAll(now = new Date()): Promise<ApplicationSummary[]> {
-  const activityPosts = await db.select().from(posts).where(eq(posts.applyEnabled, true));
+export async function summariesForAll(
+  now = new Date(),
+  /**
+   * 숨긴 게시판 id. 그 게시판의 활동은 집계에서 뺀다.
+   *
+   * 배지 숫자와 `/schedule` 목록이 이 응답을 같이 쓴다. 한쪽만 거르면 숫자와
+   * 목록이 어긋나고, 학생은 무엇을 놓쳤는지 찾는다.
+   */
+  hiddenCategories: readonly string[] = []
+): Promise<ApplicationSummary[]> {
+  const all = await db.select().from(posts).where(eq(posts.applyEnabled, true));
+  const hidden = new Set(hiddenCategories);
+  const activityPosts = hidden.size === 0 ? all : all.filter((p) => !hidden.has(p.category));
   if (activityPosts.length === 0) return [];
 
   const rows = await db

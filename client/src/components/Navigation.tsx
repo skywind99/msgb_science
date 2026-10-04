@@ -6,24 +6,47 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@shared/routes";
 import type { ApplicationSummary } from "@shared/schema";
 import { useAdmin, useAuthHeaders } from "@/contexts/admin";
+import { useCategories } from "@/hooks/use-categories";
+import { CATEGORY_DEFAULTS } from "@shared/categories";
 import { useToast } from "@/hooks/use-toast";
 import { PopupManager } from "@/components/PopupManager";
 import { InviteManager } from "@/components/InviteManager";
 import { AiSettings } from "@/components/AiSettings";
+import { CategoryManager } from "@/components/CategoryManager";
 import { PasswordChange } from "@/components/PasswordChange";
 
+/**
+ * 메뉴 기본값. **게시판 이름의 단일 출처는 `shared/categories.ts` 다.**
+ *
+ * 홈과 활동 신청은 게시판이 아니라 기능 페이지라 여기만 있다 (DB 의
+ * `CHECK (id not in ('home','schedule'))` 가 행으로 들어올 길도 막아 둔다).
+ *
+ * "일정" 은 보기만 하는 곳처럼 들려서 "신청" 으로 바꿨다. 옆의 숫자(지금 신청할 수
+ * 있는 활동 수)와 함께 학생이 메뉴만 보고도 새 활동이 열린 걸 알아채게 하려는 것.
+ * 경로는 `/schedule` 그대로다 — 이미 나간 링크가 깨지면 안 된다.
+ *
+ * **실제로 그리는 것은 `useNavItems()` 다.** 이 상수는 폴백이자 고정 항목이다.
+ */
 export const NAV_ITEMS = [
   { id: "home", label: "홈", path: "/" },
-  // "일정" 은 보기만 하는 곳처럼 들려서 "신청" 으로 바꿨다. 옆의 숫자(지금 신청할 수
-  // 있는 활동 수)와 함께 학생이 메뉴만 보고도 새 활동이 열린 걸 알아채게 하려는 것.
-  // 경로는 `/schedule` 그대로다 — 이미 나간 링크가 깨지면 안 된다.
   { id: "schedule", label: "활동 신청", path: "/schedule" },
-  { id: "lab_intro", label: "과학실 소개", path: "/lab" },
-  { id: "science_class", label: "과학중점반활동", path: "/class" },
-  { id: "career_program", label: "창의융합진로프로그램", path: "/career" },
-  { id: "student_program", label: "학생중심프로그램", path: "/student" },
-  { id: "local_community", label: "지역교육공동체활동", path: "/community" },
+  ...CATEGORY_DEFAULTS.map((c) => ({ id: c.id, label: c.label, path: c.path })),
 ];
+
+/**
+ * 지금 그릴 메뉴. 홈·활동 신청 + **숨기지 않은** 게시판을 저장된 순서로.
+ *
+ * 숨긴 게시판은 **admin 에게도 보이지 않는다.** admin 이 학생과 같은 메뉴를 봐야
+ * 숨겼는지 확인할 수 있다. 들어가는 길은 게시판 관리 창의 "열기" 다.
+ */
+function useNavItems() {
+  const { visible, routeOf } = useCategories();
+  return [
+    { id: "home", label: "홈", path: "/" },
+    { id: "schedule", label: "활동 신청", path: "/schedule" },
+    ...visible.map((c) => ({ id: c.id, label: c.label, path: routeOf(c.id) })),
+  ];
+}
 
 /**
  * 지금 신청할 수 있는 활동 수.
@@ -198,6 +221,7 @@ export function Navigation() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const { isAdmin, logout, user } = useAdmin();
+  const navItems = useNavItems();
   /** 비밀번호 변경 창. 이름 배지를 눌러 연다. */
   const [showPasswordChange, setShowPasswordChange] = useState(false);
   const openCount = useOpenActivityCount();
@@ -227,7 +251,7 @@ export function Navigation() {
 
             {/* Desktop Nav — xl 미만에서는 햄버거로 넘긴다 (lg 에서는 라벨이 깨졌다) */}
             <nav className="hidden xl:flex items-center gap-0.5">
-              {NAV_ITEMS.map((item) => {
+              {navItems.map((item) => {
                 const isActive = location === item.path;
                 return (
                   <Link
@@ -268,6 +292,10 @@ export function Navigation() {
                   {/* AI 키도 관리자만. **초대와 같은 조건을 쓴다** — 둘이 갈라지면
                       한쪽에서만 열리는 구멍이 생긴다. */}
                   {(!user || user.role === "admin") && <AiSettings />}
+                  {/* 게시판 관리도 admin 만. **초대·AI 설정과 같은 조건을 쓴다** —
+                      갈라지면 한쪽에서만 열리는 구멍이 생긴다.
+                      버튼이 늘어나는 문제는 커밋 ②의 "관리" 드롭다운에서 정리한다. */}
+                  {(!user || user.role === "admin") && <CategoryManager />}
                   {/* 이름 배지를 누르면 비밀번호를 바꿀 수 있다.
                       메일 재설정이 없는 구조라(`shared/teacherId.ts`) 교사가
                       스스로 바꿀 수 있는 자리는 여기 하나뿐이다.
@@ -320,7 +348,7 @@ export function Navigation() {
               className="xl:hidden border-t bg-white"
             >
               <nav className="flex flex-col px-4 py-4 space-y-2">
-                {NAV_ITEMS.map((item) => {
+                {navItems.map((item) => {
                   const isActive = location === item.path;
                   return (
                     <Link

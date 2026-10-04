@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { aiFillRequestSchema, putAiKeySchema } from "./aiForms.js";
 import { applyRequestSchema, lookupApplicationSchema } from "./applyForms.js";
+import { reorderCategoriesSchema, updateCategorySchema } from "./categoryForms.js";
 import {
   acceptInviteSchema,
   checkInviteSchema,
@@ -20,6 +21,7 @@ import {
   type AiFillErrorResponse,
   type AiKeysAdminResponse,
   type AiStatusResponse,
+  type PublicCategory,
   type PublicPost,
   type ResetPasswordResponse,
   type RosterEntry,
@@ -80,6 +82,44 @@ export const api = {
         // 작성자도 admin 도 아니면 403. 수정(PATCH)에는 이 검사가 없다.
         403: errorSchemas.notFound,
         404: errorSchemas.notFound,
+      },
+    },
+  },
+
+  // 게시판(카테고리). 이름·숨김·순서를 admin 이 바꾼다.
+  // **주소와 id 는 바뀌지 않는다** — 이미 나간 링크가 깨지면 안 된다.
+  categories: {
+    list: {
+      method: "GET" as const,
+      path: "/api/categories" as const,
+      responses: {
+        // 비로그인·교사에게는 숨긴 게시판이 빠지고 `hidden` 필드도 없다.
+        // admin 에게는 전부 + `hidden`.
+        200: z.array(z.custom<PublicCategory>()),
+      },
+    },
+    update: {
+      method: "PATCH" as const,
+      path: "/api/admin/categories/:id" as const,
+      input: updateCategorySchema,
+      responses: {
+        200: z.array(z.custom<PublicCategory>()),
+        400: errorSchemas.validation,
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
+        404: errorSchemas.notFound,
+      },
+    },
+    // 순서는 **일괄**이다. ▲▼ 한 번이 두 행을 바꾸므로 개별 저장이면 겹친다.
+    reorder: {
+      method: "PUT" as const,
+      path: "/api/admin/categories/order" as const,
+      input: reorderCategoriesSchema,
+      responses: {
+        200: z.array(z.custom<PublicCategory>()),
+        400: errorSchemas.validation,
+        401: errorSchemas.notFound,
+        403: errorSchemas.notFound,
       },
     },
   },
