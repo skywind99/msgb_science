@@ -14,7 +14,24 @@ const ToastViewport = React.forwardRef<
   <ToastPrimitives.Viewport
     ref={ref}
     className={cn(
-      "fixed top-0 z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:right-0 sm:top-auto sm:flex-col md:max-w-[420px]",
+      /*
+        위치와 z-index를 함께 손봤다. 둘 다 "알림을 못 봤다" 는 같은 문제의 원인이다.
+
+        **z-index**: 예전에는 `z-[100]` 이었다. 그런데 헤더 안의 관리 창들이
+        `z-[9999]`(팝업 관리는 `99999`) 라서, **그 창이 열려 있는 동안 뜬 알림은
+        배경 뒤에 완전히 가려졌다.** 저장했는지 실패했는지 알 수 없었다.
+        팝업 관리보다 위에 두려면 `100000` 이 필요하다.
+
+        **위치**: sm 이상에서 오른쪽 아래였다. 교사가 보는 곳(화면 위쪽 메뉴,
+        가운데 글)에서 가장 먼 자리다. 오른쪽 **위**로 옮기고, 헤더 높이(`h-20`,
+        80px)만큼 내려 메뉴를 가리지 않게 한다.
+
+        모바일(sm 미만)도 위쪽 전체 폭이지만 **헤더 높이만큼 내린다.** `top-0` 이던
+        동안에는 알림이 헤더를 통째로 덮어서, 알림이 떠 있는 사이에는 로고·햄버거
+        버튼·관리 메뉴를 누를 수 없었다. 아래로 옮기지 않는 이유는 손가락이 닿는
+        곳이 아래라 누르려다 알림을 건드리기 때문이다.
+      */
+      "fixed top-20 z-[100000] flex max-h-screen w-full flex-col-reverse p-4 sm:right-0 sm:bottom-auto sm:flex-col md:max-w-[420px]",
       className
     )}
     {...props}
@@ -23,13 +40,20 @@ const ToastViewport = React.forwardRef<
 ToastViewport.displayName = ToastPrimitives.Viewport.displayName
 
 const toastVariants = cva(
-  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full data-[state=open]:sm:slide-in-from-bottom-full",
+  "group pointer-events-auto relative flex w-full items-center justify-between space-x-4 overflow-hidden rounded-md border p-6 pr-8 shadow-lg transition-all data-[swipe=cancel]:translate-x-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[swipe=end]:animate-out data-[state=closed]:fade-out-80 data-[state=closed]:slide-out-to-right-full data-[state=open]:slide-in-from-top-full",
   {
     variants: {
       variant: {
         default: "border bg-background text-foreground",
         destructive:
           "destructive group border-destructive bg-destructive text-destructive-foreground",
+        /**
+         * 성공. **초록은 이 변형에서만 쓴다.**
+         *
+         * `default` 와 눈에 띄게 달라야 하는 이유가 있다 — 교사가 "등록되었습니다"
+         * 를 못 보고 같은 작업을 두 번 하는 일이 실제로 있었다.
+         */
+        success: "border-emerald-300 bg-emerald-50 text-emerald-900",
       },
     },
     defaultVariants: {
