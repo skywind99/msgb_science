@@ -7,6 +7,9 @@ import { CreatePostDialog } from "@/components/CreatePostDialog";
 import { UpcomingActivities } from "@/components/UpcomingActivities";
 import { useAdmin } from "@/contexts/admin";
 import { useCategories } from "@/hooks/use-categories";
+import { useHomeView } from "@/hooks/use-home-view";
+import { ViewSwitcher } from "@/components/home/ViewSwitcher";
+import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState, useCallback } from "react";
 
 const FEATURES = [
@@ -206,8 +209,32 @@ export default function Home() {
   const { visible, routeOf } = useCategories();
   const canGo = (id: string) => visible.some((c) => c.id === id);
 
+  /**
+   * 보기 모드. 기본값은 "기본" 이고, 그 모드에서는 **아래 네 섹션이 지금과 똑같이**
+   * 그려진다 — 감싸는 조건문만 추가했고 안쪽은 한 줄도 고치지 않았다.
+   */
+  const { mode, setMode } = useHomeView();
+  const { toast } = useToast();
+
   return (
     <div className="min-h-screen pb-20">
+      {/* 보기 전환 — 히어로 **위**. 높이 44px, margin 없음.
+          그래서 기본 모드에서 아래 내용이 밀리는 양이 정확히 44px 이다. */}
+      <ViewSwitcher
+        mode={mode}
+        onChange={setMode}
+        /* 뉴스와 TV 는 다음 단계에서 만든다. 지금 누르면 안내만 한다 —
+           빈 화면이나 404 를 보여주면 고장으로 보인다. */
+        pending={["board", "news", "tv"]}
+        onPending={(label) =>
+          toast({
+            title: `${label} 화면은 준비 중이에요.`,
+            description: "곧 열립니다. 지금은 기본과 카드보드를 쓸 수 있어요.",
+          })
+        }
+      />
+
+      {mode === "default" && (<>
       {/* Hero Section */}
       <section className="relative pt-24 pb-32 lg:pt-36 lg:pb-40 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-blue-50/50 -z-10" />
@@ -356,6 +383,7 @@ export default function Home() {
           </div>
         </div>
       </section>
+      </>)}
     </div>
   );
 }
