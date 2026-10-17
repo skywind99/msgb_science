@@ -9,6 +9,7 @@ import { useAdmin } from "@/contexts/admin";
 import { useCategories } from "@/hooks/use-categories";
 import { useHomeView } from "@/hooks/use-home-view";
 import { ViewSwitcher } from "@/components/home/ViewSwitcher";
+import { BoardView } from "@/components/home/BoardView";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState, useCallback } from "react";
 
@@ -213,7 +214,7 @@ export default function Home() {
    * 보기 모드. 기본값은 "기본" 이고, 그 모드에서는 **아래 네 섹션이 지금과 똑같이**
    * 그려진다 — 감싸는 조건문만 추가했고 안쪽은 한 줄도 고치지 않았다.
    */
-  const { mode, setMode } = useHomeView();
+  const { mode, setMode, perPage, setPerPage } = useHomeView();
   const { toast } = useToast();
 
   return (
@@ -225,7 +226,7 @@ export default function Home() {
         onChange={setMode}
         /* 뉴스와 TV 는 다음 단계에서 만든다. 지금 누르면 안내만 한다 —
            빈 화면이나 404 를 보여주면 고장으로 보인다. */
-        pending={["board", "news", "tv"]}
+        pending={["news", "tv"]}
         onPending={(label) =>
           toast({
             title: `${label} 화면은 준비 중이에요.`,
@@ -233,6 +234,8 @@ export default function Home() {
           })
         }
       />
+
+      {mode === "board" && <BoardView perPage={perPage} onPerPageChange={setPerPage} />}
 
       {mode === "default" && (<>
       {/* Hero Section */}

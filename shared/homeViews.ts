@@ -76,6 +76,9 @@ export type BoardPost = ActivityTiming & {
   content?: string | null;
   blocks?: ContentBlock[] | null;
   createdAt?: Date | string | null;
+  /** 정보형 카드(4개 보기)와 TV 카드가 쓴다. 없으면 "미정" 으로 그린다. */
+  location?: string | null;
+  capacity?: number | null;
 };
 
 /** 최신순. `createdAt` 이 없으면 id 가 큰 쪽을 새 글로 본다. */
