@@ -10,6 +10,7 @@ import { useCategories } from "@/hooks/use-categories";
 import { useHomeView } from "@/hooks/use-home-view";
 import { ViewSwitcher } from "@/components/home/ViewSwitcher";
 import { BoardView } from "@/components/home/BoardView";
+import { NewsBig } from "@/components/home/NewsBig";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState, useCallback } from "react";
 
@@ -224,9 +225,9 @@ export default function Home() {
       <ViewSwitcher
         mode={mode}
         onChange={setMode}
-        /* 뉴스와 TV 는 다음 단계에서 만든다. 지금 누르면 안내만 한다 —
+        /* TV 는 별도 라우트(PR 2)다. 아직 없으니 누르면 안내만 한다 —
            빈 화면이나 404 를 보여주면 고장으로 보인다. */
-        pending={["news", "tv"]}
+        pending={["tv"]}
         onPending={(label) =>
           toast({
             title: `${label} 화면은 준비 중이에요.`,
@@ -236,6 +237,7 @@ export default function Home() {
       />
 
       {mode === "board" && <BoardView perPage={perPage} onPerPageChange={setPerPage} />}
+      {mode === "news" && <NewsBig />}
 
       {mode === "default" && (<>
       {/* Hero Section */}
