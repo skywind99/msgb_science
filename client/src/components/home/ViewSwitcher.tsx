@@ -22,12 +22,31 @@ type Item = {
   icon: React.ReactNode;
 };
 
-const ITEMS: Item[] = [
+/**
+ * TV 버튼을 보일지. **`/tv` 라우트가 생기는 PR 2 까지 끈다.**
+ *
+ * 항목을 지우지 않고 플래그로 거르는 이유는, PR 2 에서 되돌릴 일을 한 줄로
+ * 줄이려는 것이다. 지웠다가 다시 쓰면 `pending` 처리와 아이콘까지 또 손대야 한다.
+ *
+ * **PR 2 에서 `/tv` 라우트를 붙이면 `true` 로 바꾸고 `Home.tsx` 의 `pending` 에서
+ * `"tv"` 를 빼면 된다.** 그 전까지 `true` 로 두면 "준비 중" 안내만 나온다.
+ */
+const SHOW_TV_BUTTON = false;
+
+const ALL_ITEMS: Item[] = [
   { mode: "default", label: "기본", icon: <List className="w-4 h-4" /> },
   { mode: "board", label: "카드보드", icon: <LayoutGrid className="w-4 h-4" /> },
   { mode: "news", label: "뉴스", icon: <Newspaper className="w-4 h-4" /> },
   { mode: "tv", label: "TV", icon: <Monitor className="w-4 h-4" /> },
 ];
+
+/**
+ * 실제로 그리는 항목.
+ *
+ * 세 개로 줄어도 레이아웃은 그대로다 — 툴바가 `flex` + `gap-1` 뿐이고 고정 폭이나
+ * `justify-between`, grid 가 없다. 버튼이 왼쪽에 붙어 폭만 좁아진다.
+ */
+const ITEMS: Item[] = ALL_ITEMS.filter((i) => i.mode !== "tv" || SHOW_TV_BUTTON);
 
 export function ViewSwitcher({
   mode,
