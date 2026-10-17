@@ -84,6 +84,18 @@ interface ScienceNewsItem {
   imageUrl: string | null;
   link: string;
   date: string;
+  /**
+   * 파싱이 0건일 때 붙는 표식.
+   *
+   * 0건이어도 빈 배열을 돌려주지 않고 안내용 1건을 내보낸다 — 기존 히어로 카드가
+   * 빈 목록에서 아무것도 못 그리기 때문이다. 그런데 표식이 없으면 화면이
+   * **"못 가져왔다" 와 "기사가 하나뿐이다" 를 구분할 수 없었다.**
+   *
+   * **선택 항목인 것이 중요하다.** 히어로 카드는 제목·요약·이미지·링크·날짜만
+   * 읽으므로 이 필드가 붙어도 그 화면은 달라지지 않는다. 뉴스 모드와 TV 만
+   * `shared/homeViews.ts` 의 `newsState()` 로 이걸 보고 실패 화면을 띄운다.
+   */
+  placeholder?: boolean;
 }
 
 // 캐시 (1시간)
@@ -111,7 +123,9 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     pos++;
   }
 
-  for (let i = 0; i < Math.min(positions.length, 5); i++) {
+  // 뉴스 모드가 "큰 기사 1 + 목록 5" 로 그리므로 6건까지 받는다.
+  // 기존 히어로 카드는 길이에 무관하게 동작한다(점 개수만 늘어난다).
+  for (let i = 0; i < Math.min(positions.length, 6); i++) {
     const start = positions[i];
     const end = i + 1 < positions.length ? positions[i + 1] : start + 2000;
     const block = html.slice(start, end);
@@ -152,16 +166,39 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
     items.push({ title, summary, imageUrl, link, date });
   }
 
-  const data = items.length > 0 ? items : [{
-    title: "사이언스타임즈 최신 기사",
-    summary: "",
-    imageUrl: null,
-    link: "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y",
-    date: "",
-  }];
+  if (items.length > 0) {
+    scienceNewsCache = { data: items, fetchedAt: now };
+    return items;
+  }
 
-  scienceNewsCache = { data, fetchedAt: now };
-  return data;
+  // ── 여기부터는 파싱이 0건인 경우다 ──
+  //
+  // 스크래핑이 `indexOf` + 정규식 기반이라 상대 사이트 마크업이 바뀌면 조용히
+  // 0건이 된다. 예전에는 그때 안내용 1건으로 캐시를 **덮어써서**, 한 번 실패하면
+  // 1시간 동안 가짜가 나갔고 로그에도 아무것도 남지 않았다.
+  console.warn(
+    `[science-news] 파싱 0건 — 상대 사이트 마크업이 바뀐 듯하다. ` +
+      `블록 후보 ${positions.length}개, 응답 ${html.length}바이트`
+  );
+
+  // 마지막으로 성공한 것이 있으면 그걸 계속 쓴다. 한 시간 전 기사라도 가짜보다 낫다.
+  // **캐시 시각을 갱신하지 않는다** — 다음 요청에서 다시 긁어 보게 둔다.
+  if (scienceNewsCache && scienceNewsCache.data.some((i) => !i.placeholder)) {
+    return scienceNewsCache.data;
+  }
+
+  // 성공한 적이 없다. 안내용 1건에 표식을 붙여 화면이 실패로 알아보게 한다.
+  // **캐시에 넣지 않는다** — 넣으면 1시간 동안 다시 시도하지 않는다.
+  return [
+    {
+      title: "사이언스타임즈 최신 기사",
+      summary: "",
+      imageUrl: null,
+      link: "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y",
+      date: "",
+      placeholder: true,
+    },
+  ];
 }
 
 // ── 신청 API 공용 헬퍼 ────────────────────────────────────
