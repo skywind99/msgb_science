@@ -377,9 +377,7 @@ export default function PostDetail() {
       {post.applyEnabled && (
         <div className="max-w-3xl mx-auto px-4 pt-8 space-y-4">
           <ActivityInfo post={post} />
-          {/* 명단은 교사에게만. 서버도 로그인한 교사만 통과시킨다.
-              2026-10-18 부터 담당자가 아니어도 보인다 — 확정·삭제 버튼은
-              ApplicantList 가 서버의 canManage 로 숨긴다. */}
+          {/* 명단은 교사에게만. 서버도 담당 교사·admin 만 통과시킨다. */}
           {isAdmin && <ApplicantList post={post} />}
         </div>
       )}
