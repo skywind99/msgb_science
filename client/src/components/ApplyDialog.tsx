@@ -559,6 +559,9 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
           <ul className="text-xs text-muted-foreground space-y-0.5">
             <li>수집 항목 — 학년, 반, 번호, 이름 (선택: 남긴 말)</li>
             <li>이용 목적 — 활동 참가자 확인 및 명단 관리</li>
+            {/* 누가 보는지는 동의하기 **전에** 알아야 한다.
+                명단 열람 범위를 바꾸면 이 줄과 /privacy 를 같이 고칠 것. */}
+            <li>열람 범위 — 담당 선생님과 관리자 (다른 학생에게는 보이지 않음)</li>
             <li>보유 기간 — 활동 종료 후 30일 이내 삭제</li>
           </ul>
           {/* 짧은 고지와 전체 방침이 어긋나면 안 된다. 고칠 때 양쪽을 같이 볼 것. */}
