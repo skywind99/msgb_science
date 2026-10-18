@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import ws from "ws";
 
@@ -60,9 +61,20 @@ export async function mirrorImageToStorage(
 
     const buffer = await res.arrayBuffer();
 
-    // 파일명: URL을 해싱 대신 간단한 경로 정규화로 생성 (중복 방지)
+    /*
+      파일명은 **주소의 sha256** 이다.
+
+      예전에는 `Buffer.from(url).toString("base64url").slice(0, 32)` 였다. 이건
+      해시가 아니라 **주소 앞부분을 base64 로 바꾼 것**이고, 32자는 원문 24바이트만
+      담는다. 사이언스타임즈 이미지 주소는 전부 `"https://www.sciencetimes"` 로
+      시작해서 **모든 기사가 같은 파일명 하나**가 됐다. 아래 "이미 있으면 그대로
+      쓴다" 와 맞물려, 처음 올라간 이미지가 영구히 모든 기사에 붙었다.
+
+      sha256 은 주소 전체를 본다. 길이도 일정해서 경로가 터무니없이 길어지지 않는다.
+      앞 40자만 쓴다 — 충돌 확률이 사실상 0 이고(2^160), 파일명이 짧아 읽기 쉽다.
+    */
     const ext = contentType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
-    const hash = Buffer.from(externalUrl).toString("base64url").slice(0, 32);
+    const hash = createHash("sha256").update(externalUrl).digest("hex").slice(0, 40);
     const filename = `scraped/${hash}.${ext}`;
 
     // 이미 업로드된 파일이면 그냥 public URL 반환
