@@ -4,6 +4,7 @@ import { ko } from "date-fns/locale";
 import { CalendarClock, MapPin, Users } from "lucide-react";
 import { activityStage, type ActivityStage } from "@shared/activity";
 import { coverFallback, type BoardPost, type CardShape } from "@shared/homeViews";
+import { categoryVisual } from "@/lib/categoryVisual";
 
 /**
  * 카드보드의 카드. 한 화면 개수에 따라 모양이 셋이다.
@@ -40,6 +41,19 @@ const TITLE: Record<CardShape, string> = {
   small: "text-sm leading-snug",
 };
 
+/**
+ * 표지 자리의 본문 미리보기. **카드 크기에 맞춰 줄 수와 글자 크기를 바꾼다.**
+ *
+ * 예전에는 어느 크기에서나 `text-xs text-muted-foreground/70` 였다. 너무 작고
+ * 연해서 "읽을 것" 이 아니라 "회색 얼룩" 으로 보였다. 표지가 없는 글에서는 이
+ * 글자가 **유일한 내용**이므로 읽히게 만든다.
+ */
+const PREVIEW: Record<CardShape, string> = {
+  info: "text-base leading-relaxed line-clamp-5",
+  standard: "text-sm leading-relaxed line-clamp-4",
+  small: "text-sm leading-snug line-clamp-3",
+};
+
 /** 활동이면 단계, 새소식이면 "새소식". */
 function badgeOf(post: BoardPost, now: Date) {
   return post.applyEnabled ? STAGE[activityStage(post, now)] : NEWS;
@@ -52,13 +66,46 @@ const fmt = (v: Date | string | null | undefined, pattern: string) => {
 };
 
 /**
- * 표지. 대표 이미지가 없으면 본문 앞부분을 연한 회색 배경에 보여준다.
+ * 표지. 세 가지 중 하나가 된다.
  *
- * 빈 상자를 두지 않는 이유는 카드 높이가 들쭉날쭉해지기 때문이다. 글귀도 없으면
- * 회색 배경만 남는다.
+ *  1. 대표 이미지가 있으면 그것
+ *  2. 없고 본문 글이 있으면 **그 글을 읽히게** 보여준다
+ *  3. 글도 없으면 **게시판 색 단색 + 아이콘 + 게시판 이름**
+ *
+ * 3번을 빈 회색으로 두면 "불러오는 중" 처럼 보여서, 교사가 이미지를 넣었는데 안
+ * 나온 줄 안다. 게시판 색을 깔면 **비어 있는 것이 의도** 라는 게 보인다.
  */
-function Cover({ post, shape }: { post: BoardPost; shape: CardShape }) {
+function Cover({
+  post,
+  shape,
+  categoryLabel,
+}: {
+  post: BoardPost;
+  shape: CardShape;
+  categoryLabel: string;
+}) {
   const text = post.imageUrl ? "" : coverFallback(post);
+  const { Icon, solid } = categoryVisual(post.category);
+
+  // 이미지도 글도 없다. 게시판 색 블록.
+  if (!post.imageUrl && !text) {
+    return (
+      <div
+        className={`relative w-full ${ASPECT[shape]} overflow-hidden flex flex-col items-center justify-center gap-1.5 ${solid}`}
+      >
+        <Icon
+          className={`text-white/80 ${shape === "small" ? "w-7 h-7" : shape === "info" ? "w-12 h-12" : "w-9 h-9"}`}
+        />
+        <span
+          className={`font-bold text-white/90 px-2 text-center ${
+            shape === "small" ? "text-[11px]" : "text-xs"
+          }`}
+        >
+          {categoryLabel}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className={`relative w-full ${ASPECT[shape]} overflow-hidden bg-muted`}>
@@ -67,13 +114,19 @@ function Cover({ post, shape }: { post: BoardPost; shape: CardShape }) {
           src={post.imageUrl}
           alt=""
           loading="lazy"
-          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+          /*
+            `object-top` — 세로로 긴 포스터는 **위쪽부터** 보여준다.
+            기본값(`center`)이면 안내문 가운데가 잘려 나와서, 제목이 맨 위에 있는
+            포스터가 본문 중간만 보인다. 표지가 2:1 로 납작한 4개 보기에서 가장
+            심하다. `object-cover` 는 그대로 둔다 — 비율을 지키며 칸을 채운다.
+          */
+          className="w-full h-full object-cover object-top group-hover:scale-[1.03] transition-transform duration-500"
         />
       ) : (
+        /* 위에서부터 읽히게. 본문색(`text-foreground`)을 쓰고 크기도 올렸다 —
+           표지가 없는 글에서는 이 글자가 유일한 내용이다. */
         <p
-          className={`absolute inset-0 p-3 text-muted-foreground/70 whitespace-pre-wrap ${
-            shape === "small" ? "text-[11px] line-clamp-3" : "text-xs line-clamp-4"
-          }`}
+          className={`absolute inset-0 p-4 text-foreground whitespace-pre-wrap ${PREVIEW[shape]}`}
         >
           {text}
         </p>
@@ -105,7 +158,7 @@ export function BoardCard({
       className="group flex flex-col h-full rounded-2xl border border-border bg-card overflow-hidden hover:border-primary/40 hover:shadow-md transition-all"
     >
       <div className="relative">
-        <Cover post={post} shape={shape} />
+        <Cover post={post} shape={shape} categoryLabel={categoryLabel} />
         {/* 정보형은 배지를 표지 왼쪽 위에 얹는다. 나머지는 아래 줄에 둔다. */}
         {shape === "info" && (
           <span
@@ -166,7 +219,12 @@ export function BoardCard({
                 </p>
               </>
             ) : (
-              <p className="line-clamp-3 whitespace-pre-wrap">{coverFallback(post)}</p>
+              /* 표지에 이미 본문이 깔려 있으면 여기서 또 보여주지 않는다.
+                 전에는 표지 글자가 작고 연해서 겹쳐도 눈에 안 띄었는데, 읽히게
+                 키우고 나니 같은 글이 두 번 나오는 것이 보인다. */
+              post.imageUrl ? (
+                <p className="line-clamp-3 whitespace-pre-wrap">{coverFallback(post)}</p>
+              ) : null
             )}
           </div>
         )}
