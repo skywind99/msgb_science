@@ -27,7 +27,7 @@ import {
   pickArticleImage,
 } from "../shared/newsParse.js";
 import { ensureAuth, requireAdmin, resolveUser, type AuthedRequest, type AuthUser } from "./auth.js";
-import { canManagePost, manageOutcome } from "../shared/postPermissions.js";
+import { canManagePost, canViewRoster, manageOutcome } from "../shared/postPermissions.js";
 import { popupPointsToPost } from "../shared/postLink.js";
 import { clearKey, loadKey, loadKeyStatus, saveKey } from "./aiKeys.js";
 import { hasUsableSecret } from "./aiCrypto.js";
@@ -352,28 +352,32 @@ async function loadActivity(req: Request, res: Response): Promise<Post | null> {
 /**
  * 명단을 볼 권한이 있는지 확인한다.
  *
- * `admin` 은 전체, `teacher` 는 자기가 올린 활동만이다. 학생 개인정보가 나가는
- * 경로이므로 게시물이 존재하는지보다 권한을 먼저 따진다.
+ * **2026-10-18 부터 로그인한 교사면 누구나 본다**(`canViewRoster`). 그 전에는
+ * 담당 교사와 `admin` 만이었다.
  *
- * 기존 관리자 비밀번호로 만든 게시물은 `authorId` 가 null 이다.
- * 이런 글은 admin 만 볼 수 있다 — 담당자를 알 수 없는 명단을 아무 교사에게나
- * 열어주는 것보다 낫다.
+ * 학생 개인정보가 나가는 경로이므로 게시물이 존재하는지보다 권한을 먼저 따진다.
+ * 이제 교사 전체가 통과하므로 유출 차이는 없지만, 순서를 바꿔 두면 나중에
+ * 범위를 다시 좁힐 때 그 자리가 빠진다.
+ *
+ * 돌려주는 `canManage` 는 **고칠 수 있는지**다. 보는 것과 고치는 것이 갈려서,
+ * 화면이 이 값으로 확정·삭제 버튼을 감춘다. 이게 없으면 남의 활동 명단을 본
+ * 교사가 버튼을 눌러 403 을 받는 막다른 길이 된다.
  */
 async function loadOwnedActivity(
   req: Request,
   res: Response
-): Promise<{ post: Post; user: AuthUser } | null> {
+): Promise<{ post: Post; user: AuthUser; canManage: boolean } | null> {
   const user = await ensureAuth(req, res);
   if (!user) return null;
 
   const post = await loadActivity(req, res);
   if (!post) return null;
 
-  if (!canManagePost(user, post)) {
+  if (!canViewRoster(user, post)) {
     res.status(403).json({ message: "이 활동의 명단을 볼 권한이 없습니다." });
     return null;
   }
-  return { post, user };
+  return { post, user, canManage: canManagePost(user, post) };
 }
 
 /**
@@ -1234,7 +1238,8 @@ export async function registerRoutes(
 
   // ── 교사용 신청자 명단 ───────────────────────────────────
   // 여기가 개별 신청자를 내보내는 유일한 인증 경로다.
-  // admin 은 전부, teacher 는 자기가 올린 활동만 볼 수 있다.
+  // 조회는 로그인한 교사 전체, 수정·삭제는 담당 교사와 admin 만이다.
+  // 비로그인 공개 경로는 집계(ApplicationSummary)만 내려보낸다 — 그건 그대로다.
 
   app.get(api.roster.list.path, async (req, res) => {
     const owned = await loadOwnedActivity(req, res);
@@ -1244,6 +1249,7 @@ export async function registerRoutes(
       postId: owned.post.id,
       title: owned.post.title,
       capacity: owned.post.capacity,
+      canManage: owned.canManage,
       entries: entries.map(toRosterEntry),
     });
   });
