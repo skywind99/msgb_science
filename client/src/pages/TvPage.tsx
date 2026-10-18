@@ -1,8 +1,13 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { WifiOff } from "lucide-react";
 import { api } from "@shared/routes";
 import type { ApplicationSummary, PublicCategory } from "@shared/schema";
 import {
+  TV_CARD_SECONDS,
+  TV_NEWS_SECONDS,
+  clampSeconds,
   newsState,
   realNews,
   tvItems,
@@ -10,6 +15,7 @@ import {
   type BoardPost,
   type NewsItem,
 } from "@shared/homeViews";
+import { useIdleCursor, useMinuteNow, useTvRotation } from "@/hooks/use-tv-rotation";
 import { usePosts } from "@/hooks/use-posts";
 import { TvClock } from "@/components/tv/TvClock";
 import { TvNews, TvNewsEmpty } from "@/components/tv/TvNews";
@@ -40,13 +46,21 @@ const TV_QUERY = {
 } as const;
 
 export default function TvPage() {
-  const [newsIndex] = useState(0);
-  const [cardOffset] = useState(0);
+  const [, navigate] = useLocation();
+
   /**
-   * 활동 단계(신청 받는 중 → 마감)가 시간으로 바뀐다. 고정된 `new Date()` 를 쓰면
-   * 마감된 활동이 계속 "신청 받는 중" 으로 남는다. 다음 커밋의 타이머가 갱신한다.
+   * 간격은 쿼리스트링으로 바꿀 수 있다 — `/tv?news=30&card=8`.
+   *
+   * `clampSeconds` 가 하한 미달·숫자 아님을 **기본값으로 되돌린다.** 하한으로
+   * 끌어올리지 않는 이유는, `?news=1` 을 넣은 사람은 "빠르게" 를 원한 것이라
+   * 5초로 올려 두면 의도대로 됐다고 착각하기 때문이다.
    */
-  const [now] = useState(() => new Date());
+  const params = new URLSearchParams(window.location.search);
+  const newsSec = clampSeconds(params.get("news"), TV_NEWS_SECONDS);
+  const cardSec = clampSeconds(params.get("card"), TV_CARD_SECONDS);
+
+  /** 활동 단계 판정에 쓰는 지금. 카드 목록보다 **먼저** 있어야 한다. */
+  const now = useMinuteNow();
 
   const news = useQuery<NewsItem[]>({
     queryKey: ["/api/science-news", "tv"],
@@ -118,10 +132,62 @@ export default function TvPage() {
 
   const articles = realNews(news.data);
   const newsOk = !news.isLoading && newsState(news.data) === "ok" && articles.length > 0;
+
+  /** 모든 타이머가 이 훅 하나에 있다. 언마운트할 때 함께 정리된다. */
+  const { newsIndex, cardOffset, paused, progress, pause, stepNews } = useTvRotation({
+    newsCount: articles.length,
+    cardCount: cards.length,
+    newsSec,
+    cardSec,
+  });
+
+  const idle = useIdleCursor();
+
+  /**
+   * PC 를 연결했을 때의 조작. ←/→ 기사, 스페이스 일시정지, F 전체화면,
+   * Esc 로 메인으로 나가기.
+   *
+   * 입력 칸을 가릴 걱정은 없다 — TV 화면에는 입력 칸이 없다. 그래도 수식 키가
+   * 눌린 경우는 브라우저에 맡긴다(Ctrl+F 등).
+   */
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        stepNews(1);
+      } else if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        stepNews(-1);
+      } else if (e.key === " ") {
+        e.preventDefault();
+        pause();
+      } else if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+        else void document.documentElement.requestFullscreen().catch(() => {});
+      } else if (e.key === "Escape") {
+        // 전체 화면이면 브라우저가 Esc 를 먼저 먹는다. 그 다음 Esc 에 나간다.
+        if (!document.fullscreenElement) navigate("/");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pause, stepNews, navigate]);
+
+  /**
+   * 연속 실패. 세 쿼리 중 **가장 많이 실패한 것**을 본다.
+   *
+   * react-query 가 마지막 성공 데이터를 들고 있으므로 화면은 계속 돈다. 다만
+   * 보이는 내용이 낡았을 수 있다는 것을 작게 알린다.
+   */
+  const failures = Math.max(news.failureCount, categories.failureCount, summaries.failureCount);
+
   const current = newsOk ? articles[wrapIndex(newsIndex, articles.length)] : null;
 
   return (
-    <div className="tv-root flex flex-col">
+    <div className={`tv-root flex flex-col ${idle ? "tv-idle" : ""}`}>
       <TvClock />
 
       {current ? (
@@ -136,7 +202,7 @@ export default function TvPage() {
       )}
 
       {/* 카드 줄. 0장이면 아무것도 그리지 않고 뉴스가 자리를 다 쓴다. */}
-      <div className="flex-1 flex flex-col justify-center pb-6">
+      <div className="flex-1 flex flex-col justify-center pb-4">
         <TvCardRail
           posts={cards}
           offset={cardOffset}
@@ -145,6 +211,39 @@ export default function TvPage() {
           now={now}
         />
       </div>
+
+      {/* 맨 아래 진행 줄 — 다음 기사까지. 일시정지하면 멈춘 자리에 머문다. */}
+      <div className="h-2 shrink-0" style={{ background: "var(--tv-line)" }}>
+        <div
+          className="h-full"
+          style={{
+            width: `${Math.round(progress * 100)}%`,
+            background: "var(--tv-accent)",
+            transition: paused ? "none" : "width 1s linear",
+          }}
+        />
+      </div>
+
+      {/* 일시정지 표시. 눌러 놓고 잊었을 때 왜 안 넘어가는지 알 수 있게. */}
+      {paused && (
+        <div
+          className="absolute top-8 right-12 px-5 py-2 rounded-full text-[26px] font-bold"
+          style={{ background: "var(--tv-line)", color: "var(--tv-text)" }}
+        >
+          일시정지
+        </div>
+      )}
+
+      {/* 연속 3회 실패. 화면은 마지막 데이터로 계속 돈다. */}
+      {failures >= 3 && (
+        <div
+          className="absolute bottom-6 left-12 flex items-center gap-3 px-5 py-2 rounded-full"
+          style={{ background: "var(--tv-panel)", color: "var(--tv-dim)" }}
+        >
+          <WifiOff className="w-6 h-6" />
+          <span className="text-[24px] font-semibold">연결 확인 중</span>
+        </div>
+      )}
     </div>
   );
 }

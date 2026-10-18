@@ -122,6 +122,9 @@
 
   background: var(--tv-bg);
   color: var(--tv-text);
+  /* 일시정지 표시와 "연결 확인 중" 이 `absolute` 로 얹힌다. 기준이 없으면
+     문서 전체를 기준으로 삼아 엉뚱한 자리에 붙는다. */
+  position: relative;
   /* 한 화면에 고정. 스크롤이 생기면 TV 에서는 아래쪽을 볼 방법이 없다. */
   width: 100vw;
   height: 100vh;
