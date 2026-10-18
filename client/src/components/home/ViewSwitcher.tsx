@@ -23,15 +23,12 @@ type Item = {
 };
 
 /**
- * TV 버튼을 보일지. **`/tv` 라우트가 생기는 PR 2 까지 끈다.**
+ * TV 버튼을 보일지. `/tv` 라우트가 생겼으므로 켠다.
  *
- * 항목을 지우지 않고 플래그로 거르는 이유는, PR 2 에서 되돌릴 일을 한 줄로
- * 줄이려는 것이다. 지웠다가 다시 쓰면 `pending` 처리와 아이콘까지 또 손대야 한다.
- *
- * **PR 2 에서 `/tv` 라우트를 붙이면 `true` 로 바꾸고 `Home.tsx` 의 `pending` 에서
- * `"tv"` 를 빼면 된다.** 그 전까지 `true` 로 두면 "준비 중" 안내만 나온다.
+ * 플래그를 남겨 두는 이유는 TV 화면만 끌 수 있게 하려는 것이다 — 라우트에 문제가
+ * 생기면 이 한 줄로 메인에서 입구를 닫을 수 있다(주소로는 계속 들어갈 수 있다).
  */
-const SHOW_TV_BUTTON = false;
+const SHOW_TV_BUTTON = true;
 
 const ALL_ITEMS: Item[] = [
   { mode: "default", label: "기본", icon: <List className="w-4 h-4" /> },
@@ -51,12 +48,15 @@ const ITEMS: Item[] = ALL_ITEMS.filter((i) => i.mode !== "tv" || SHOW_TV_BUTTON)
 export function ViewSwitcher({
   mode,
   onChange,
+  onTv,
   /** 아직 만들지 않은 모드. 누르면 "준비 중" 안내만 한다. */
   pending = [],
   onPending,
 }: {
   mode: ViewMode;
   onChange: (next: ViewMode) => void;
+  /** TV 는 모드가 아니라 **별도 라우트**다. 그래서 저장하지 않고 이동만 한다. */
+  onTv?: () => void;
   pending?: ReadonlyArray<ViewMode | "tv">;
   onPending?: (label: string) => void;
 }) {
@@ -78,6 +78,8 @@ export function ViewSwitcher({
                 /* 선택된 항목을 보조기술에 알린다. `aria-pressed` 가 아니라
                    `aria-current` 를 쓰는 이유는 네 항목이 토글이 아니라
                    "지금 어디" 를 가리키기 때문이다. */
+                aria-label={item.label}
+                title={item.label}
                 aria-current={active ? "true" : undefined}
                 aria-disabled={isPending ? "true" : undefined}
                 onClick={() => {
@@ -85,7 +87,8 @@ export function ViewSwitcher({
                     onPending?.(item.label);
                     return;
                   }
-                  if (item.mode !== "tv") onChange(item.mode);
+                  if (item.mode === "tv") onTv?.();
+                  else onChange(item.mode);
                 }}
                 className={`inline-flex items-center gap-1.5 px-3 h-8 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
                   active
@@ -96,7 +99,10 @@ export function ViewSwitcher({
                 }`}
               >
                 {item.icon}
-                {item.label}
+                {/* 네 개가 되면 320px 폭에서 두 줄이 된다(`h-11` 안에서 잘린다).
+                    가장 좁은 화면에서는 아이콘만 남기고, `aria-label`·`title` 이
+                    글자를 대신한다. */}
+                <span className="hidden min-[400px]:inline">{item.label}</span>
               </button>
             );
           })}

@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { ArrowRight, BookOpen, FlaskConical, Users, Globe, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { usePosts } from "@/hooks/use-posts";
 import { PostCard, PostCardSkeleton } from "@/components/PostCard";
@@ -11,7 +11,6 @@ import { useHomeView } from "@/hooks/use-home-view";
 import { ViewSwitcher } from "@/components/home/ViewSwitcher";
 import { BoardView } from "@/components/home/BoardView";
 import { NewsBig } from "@/components/home/NewsBig";
-import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState, useCallback } from "react";
 
 const FEATURES = [
@@ -217,7 +216,8 @@ export default function Home() {
    * 그려진다 — 감싸는 조건문만 추가했고 안쪽은 한 줄도 고치지 않았다.
    */
   const { mode, setMode, perPage, setPerPage } = useHomeView();
-  const { toast } = useToast();
+  // TV 는 모드가 아니라 라우트다. 저장하지 않고 이동만 한다.
+  const [, navigate] = useLocation();
 
   return (
     <div className="min-h-screen pb-20">
@@ -226,15 +226,8 @@ export default function Home() {
       <ViewSwitcher
         mode={mode}
         onChange={setMode}
-        /* TV 는 별도 라우트(PR 2)다. 아직 없으니 누르면 안내만 한다 —
-           빈 화면이나 404 를 보여주면 고장으로 보인다. */
-        pending={["tv"]}
-        onPending={(label) =>
-          toast({
-            title: `${label} 화면은 준비 중이에요.`,
-            description: "곧 열립니다. 지금은 기본과 카드보드를 쓸 수 있어요.",
-          })
-        }
+        /* TV 는 모드가 아니라 별도 라우트(`/tv`)다. 저장하지 않고 이동만 한다. */
+        onTv={() => navigate("/tv")}
       />
 
       {mode === "board" && <BoardView perPage={perPage} onPerPageChange={setPerPage} />}
