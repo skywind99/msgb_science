@@ -30,8 +30,8 @@ export const applyRequestSchema = insertApplicationSchema
       errorMap: () => ({ message: "개인정보 수집·이용에 동의해야 신청할 수 있습니다." }),
     }),
   })
-  // 추측하기 쉬운 비밀번호를 여기서 막는다. 학생이 정하는 값이라 그냥 두면
-  // 절반이 1234 나 생년월일을 쓴다. 자세한 이유는 shared/studentSecret.ts 참고.
+  // 비밀번호 형식 검사. 2026-10-18 부터 길이와 공백만 본다 — 강도 검사는
+  // 학생이 쓰기 어렵다는 이유로 해제했다. 자세한 내용은 shared/studentSecret.ts 참고.
   .superRefine((v, ctx) => {
     const problem = checkStudentPassword(v.studentPassword, {
       grade: v.grade,

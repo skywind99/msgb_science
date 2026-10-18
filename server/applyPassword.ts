@@ -35,9 +35,10 @@ export function verifyApplyPassword(plain: string, stored: string): boolean {
  * 원래는 서버가 6자리 랜덤 코드를 발급했다(`generateApplyCode`). 학생이 외우기
  * 어렵다는 이유로 직접 정하는 방식으로 바꿨고, 랜덤 생성 함수는 제거했다.
  *
- * 학생이 정한 값은 랜덤보다 약하다. 추측하기 쉬운 값은
- * `shared/studentSecret.ts` 에서 거부하고, 조회 실패 횟수는
- * `server/rateLimit.ts` 의 `lookupPerStudent` 로 제한한다. 둘 다 필요하다.
+ * 학생이 정한 값은 랜덤보다 약하다. 원래는 추측하기 쉬운 값을
+ * `shared/studentSecret.ts` 에서 거부했지만 2026-10-18 에 해제했다 — 이제
+ * `1234` 도 통과한다. 남은 방어는 `server/rateLimit.ts` 의 요청 제한뿐이고,
+ * 그중 전교생을 훑는 수법을 막는 것은 `lookupPerIp` 하나다.
  */
 export const hashStudentPassword = hashApplyPassword;
 export const verifyStudentPassword = verifyApplyPassword;
