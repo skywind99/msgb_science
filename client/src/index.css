@@ -131,6 +131,27 @@
   overflow: hidden;
 }
 
+/*
+  **제목 색을 되돌린다.**
+
+  이 파일의 `@layer base` 에 `h1..h6 { @apply … text-foreground }` 가 있다.
+  그게 **요소에 직접 색을 박아서** `.tv-root` 의 `color` 상속을 덮는다. 그래서
+  어두운 배경에 어두운 글자가 되어 뉴스 제목과 카드 제목이 보이지 않았다
+  (시계만 보였던 것은 거기만 인라인 `style` 로 색을 줬기 때문이다).
+
+  제목마다 색을 적는 대신 여기서 한 번에 덮는다 — 앞으로 제목을 더해도 같은
+  함정에 빠지지 않는다. `@layer` 밖이라 레이어 안의 규칙보다 뒤에 적용되고,
+  선택자도 `.tv-root h2`(0,1,1) 가 `h2`(0,0,1) 보다 구체적이다.
+*/
+.tv-root h1,
+.tv-root h2,
+.tv-root h3,
+.tv-root h4,
+.tv-root h5,
+.tv-root h6 {
+  color: var(--tv-text);
+}
+
 /* 커서를 숨긴 상태. 사람이 조작하지 않는 화면이라 기본이 숨김에 가깝다. */
 .tv-root.tv-idle,
 .tv-root.tv-idle * {
