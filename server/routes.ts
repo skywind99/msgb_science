@@ -21,6 +21,11 @@ import { buildCalendar, contentDisposition, eventToGoogleUrl } from "./calendar.
 import { toCalendarEvent } from "../shared/calendarEvent.js";
 import { z } from "zod";
 import { mirrorImageToStorage, uploadBufferToStorage } from "./imageUpload.js";
+import {
+  SCIENCE_TIMES_LIST,
+  parseNewsList,
+  pickArticleImage,
+} from "../shared/newsParse.js";
 import { ensureAuth, requireAdmin, resolveUser, type AuthedRequest, type AuthUser } from "./auth.js";
 import { canManagePost, manageOutcome } from "../shared/postPermissions.js";
 import { popupPointsToPost } from "../shared/postLink.js";
@@ -102,71 +107,101 @@ interface ScienceNewsItem {
 let scienceNewsCache: { data: ScienceNewsItem[]; fetchedAt: number } | null = null;
 const CACHE_TTL = 60 * 60 * 1000;
 
+/**
+ * 기사 주소 → 미러링까지 끝난 이미지 주소.
+ *
+ * 한 시간 캐시가 풀려 목록을 다시 긁을 때, **이미 해결한 기사는 페이지를 다시
+ * 받지 않는다.** 목록 앞쪽 기사는 며칠씩 그대로 있으므로 대부분 여기서 끝난다.
+ * 사이언스타임즈에 요청을 덜 보내고, 같은 이미지를 다시 미러링하지도 않는다.
+ *
+ * 서버리스에서는 인스턴스마다 따로지만 캐시라 문제가 없다 — 없으면 다시 받는다.
+ */
+const articleImageCache = new Map<string, string | null>();
+
+/** 기사 페이지 하나에 쓰는 시간. 느린 한 건이 전체를 붙잡지 않게 한다. */
+const ARTICLE_TIMEOUT_MS = 5_000;
+/** 동시에 보내는 요청 수. 상대 서버에 한꺼번에 몰리지 않게 한다. */
+const ARTICLE_CONCURRENCY = 3;
+
+/**
+ * 기사 페이지에서 대표 이미지를 가져온다. **실패하면 `null`** — 던지지 않는다.
+ *
+ * 한 건이 실패해도 나머지 기사는 정상이어야 한다. 예전처럼 목록 블록의 정규식으로
+ * 뽑지 않는 이유는, 블록 경계가 마크업 변화에 약하고 `og:image` 는 기사가 스스로
+ * 선언하는 값이라 더 믿을 수 있어서다.
+ */
+async function articleImage(link: string): Promise<string | null> {
+  const cached = articleImageCache.get(link);
+  if (cached !== undefined) return cached;
+
+  let picked: string | null = null;
+  try {
+    const res = await fetch(link, {
+      headers: { "User-Agent": "Mozilla/5.0 (compatible; school-site/1.0)" },
+      signal: AbortSignal.timeout(ARTICLE_TIMEOUT_MS),
+    });
+    if (res.ok) {
+      const raw = pickArticleImage(await res.text());
+      // 미러링도 실패할 수 있다. 그때는 원본 주소가 돌아온다(그 함수의 기존 동작).
+      picked = raw ? await mirrorImageToStorage(raw) : null;
+    }
+  } catch {
+    // 타임아웃·네트워크 오류. 이 기사만 이미지 없이 간다.
+  }
+
+  articleImageCache.set(link, picked);
+  return picked;
+}
+
+/** 동시 요청 수를 제한해 순서를 지키며 처리한다. */
+async function mapLimited<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= items.length) return;
+      out[i] = await fn(items[i]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
   const now = Date.now();
   if (scienceNewsCache && now - scienceNewsCache.fetchedAt < CACHE_TTL) {
     return scienceNewsCache.data;
   }
 
-  const res = await fetch(
-    "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y",
-    { headers: { "User-Agent": "Mozilla/5.0 (compatible; school-site/1.0)" } }
-  );
+  const res = await fetch(SCIENCE_TIMES_LIST, {
+    headers: { "User-Agent": "Mozilla/5.0 (compatible; school-site/1.0)" },
+  });
   const html = await res.text();
 
-  const items: ScienceNewsItem[] = [];
+  // 목록에서는 제목·요약·링크·날짜만 뽑는다. **이미지는 기사 페이지에서 가져온다.**
+  // 파싱은 `shared/newsParse.ts` 가 한다 — 가짜 HTML 로 시험할 수 있어야 한다.
+  const list = parseNewsList(html, 6);
 
-  const positions: number[] = [];
-  let pos = 0;
-  while ((pos = html.indexOf('class="sub_txt"', pos)) !== -1) {
-    positions.push(pos);
-    pos++;
-  }
+  if (list.length > 0) {
+    // 기사 페이지를 병렬로 받되 동시 요청 수를 제한한다. 한 건이 실패하거나
+    // 느려도 나머지는 정상이고, 그 기사만 이미지가 없다.
+    const images = await mapLimited(list, ARTICLE_CONCURRENCY, (item) => articleImage(item.link));
 
-  // 뉴스 모드가 "큰 기사 1 + 목록 5" 로 그리므로 6건까지 받는다.
-  // 기존 히어로 카드는 길이에 무관하게 동작한다(점 개수만 늘어난다).
-  for (let i = 0; i < Math.min(positions.length, 6); i++) {
-    const start = positions[i];
-    const end = i + 1 < positions.length ? positions[i + 1] : start + 2000;
-    const block = html.slice(start, end);
+    const items: ScienceNewsItem[] = list.map((item, k) => ({
+      title: item.title,
+      summary: item.summary,
+      imageUrl: images[k],
+      link: item.link,
+      // 날짜는 목록 값을 그대로 쓴다. 기사 게시일과 6/6 일치하는 것을 확인했다
+      // (2026-10-18). 어긋나기 시작하면 `pickArticleDate` 로 바꾼다.
+      date: item.date,
+    }));
 
-    const titleMatch = block.match(/<b>([\s\S]*?)<\/b>/);
-    const title = titleMatch
-      ? titleMatch[1].replace(/<[^>]+>/g, "").trim()
-      : "";
-    if (!title) continue;
-
-    const summaryMatch = block.match(/<span>([\s\S]*?)<\/span>/);
-    let summary = "";
-    if (summaryMatch) {
-      const raw = summaryMatch[1].replace(/<[^>]+>/g, "").trim();
-      summary = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
-    }
-
-    const linkMatch = block.match(/href="([^"]*nscvrgSn=\d+[^"]*)"/);
-    const href = linkMatch ? linkMatch[1] : "";
-    const link = href
-      ? href.startsWith("http") ? href : "https://www.sciencetimes.co.kr" + href
-      : "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y";
-
-    const imgMatch = block.match(/jnrepo\/upload\/[^"']+\.(jpg|jpeg|png|gif|webp)/i);
-    let imageUrl: string | null = imgMatch
-      ? "https://www.sciencetimes.co.kr/" + imgMatch[0]
-      : null;
-
-    // 이미지가 있으면 Supabase Storage에 미러링
-    if (imageUrl) {
-      imageUrl = await mirrorImageToStorage(imageUrl);
-    }
-
-    const before = html.slice(Math.max(0, start - 500), start);
-    const dateMatches = before.match(/(\d{4}-\d{2}-\d{2})/g);
-    const date = dateMatches ? dateMatches[dateMatches.length - 1] : "";
-
-    items.push({ title, summary, imageUrl, link, date });
-  }
-
-  if (items.length > 0) {
     scienceNewsCache = { data: items, fetchedAt: now };
     return items;
   }
@@ -178,7 +213,7 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
   // 1시간 동안 가짜가 나갔고 로그에도 아무것도 남지 않았다.
   console.warn(
     `[science-news] 파싱 0건 — 상대 사이트 마크업이 바뀐 듯하다. ` +
-      `블록 후보 ${positions.length}개, 응답 ${html.length}바이트`
+      `응답 ${res.status} / ${html.length}바이트`
   );
 
   // 마지막으로 성공한 것이 있으면 그걸 계속 쓴다. 한 시간 전 기사라도 가짜보다 낫다.
@@ -194,7 +229,7 @@ async function fetchScienceNews(): Promise<ScienceNewsItem[]> {
       title: "사이언스타임즈 최신 기사",
       summary: "",
       imageUrl: null,
-      link: "https://www.sciencetimes.co.kr/nscvrg/list/menu/265?sersYn=Y",
+      link: SCIENCE_TIMES_LIST,
       date: "",
       placeholder: true,
     },

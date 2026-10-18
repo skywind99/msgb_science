@@ -15,6 +15,14 @@ import { SCIENCE_TIMES_URL, useScienceNewsQuery } from "@/hooks/use-science-news
 
 const SOURCE = "사이언스타임즈";
 
+/**
+ * 이미지가 없을 때. **학교 파랑 단색 + 출처 라벨.**
+ *
+ * 관계없는 스톡 사진을 고르지 않는다 — 읽는 사람은 그게 그 기사의 사진이라고
+ * 믿는다. `Home.tsx` 의 히어로 카드도 같은 색을 쓴다.
+ */
+const NO_IMAGE_BG = "bg-primary";
+
 /** 날짜가 빈 문자열로 오는 일이 있다. 빈 줄을 만들지 않는다. */
 const DateLine = ({ date }: { date: string }) =>
   date ? <span className="text-muted-foreground">{date}</span> : null;
@@ -35,8 +43,8 @@ function Lead({ item }: { item: NewsItem }) {
             className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
           />
         ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <Newspaper className="w-12 h-12 text-muted-foreground/30" />
+          <div className={`absolute inset-0 flex items-center justify-center ${NO_IMAGE_BG}`}>
+            <Newspaper className="w-12 h-12 text-primary-foreground/40" />
           </div>
         )}
         <span className="absolute top-3 left-3 px-3 py-1 rounded-full bg-primary text-primary-foreground text-xs font-bold">
@@ -76,8 +84,8 @@ function Row({ item }: { item: NewsItem }) {
         {item.imageUrl ? (
           <img src={item.imageUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <Newspaper className="w-5 h-5 text-muted-foreground/30" />
+          <div className={`w-full h-full flex items-center justify-center ${NO_IMAGE_BG}`}>
+            <Newspaper className="w-5 h-5 text-primary-foreground/50" />
           </div>
         )}
       </div>

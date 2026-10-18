@@ -330,6 +330,23 @@ AI 로 채운 뒤 대표 이미지를 다른 사진으로 바꾸거나 지워도
 
 ---
 
+## 정리할 것: 안 쓰는 `scraped/` 파일 2개
+
+`mirrorImageToStorage` 의 파일명이 **주소의 sha256** 으로 바뀌었다(2026-10-18).
+예전 규칙(`base64(url).slice(0,32)`)으로 올라간 파일 둘은 **아무도 가리키지 않는
+채 남아 있다.** 지우지 않았다 — 데이터 삭제는 따로 확인받을 일이다.
+
+| 파일 | 크기 |
+|---|---|
+| `news-images/scraped/aHR0cHM6Ly93d3cuc2NpZW5jZXRpbWVz.jpg` | 12,840 B |
+| `news-images/scraped/aHR0cHM6Ly93d3cuc2NpZW5jZXRpbWVz.png` | 594,802 B |
+
+DB 확인 결과 `posts.image_url`·`posts.blocks` 의 `imageUrl`·`popups.image_url`
+**어디에도 `/scraped/` 경로가 없다**(0건). 그래서 지워도 깨지는 글이 없다.
+아래 "이미지 정리 도구" 과제에 이 둘을 함께 넣는다.
+
+---
+
 ## 메인 보기 모드 — PR 2 (TV) 와 규모 메모
 
 PR 1(툴바·카드보드·뉴스·스크래핑 견고화)은 `feat/home-views` 에 있다.

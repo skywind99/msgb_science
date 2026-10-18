@@ -29,24 +29,24 @@ interface ScienceNewsItem {
   date: string;
 }
 
-// 제목 키워드 → Unsplash 대체 이미지 (원본 없거나 로드 실패 시만 사용)
-const SCIENCE_IMAGES: { keywords: string[]; url: string }[] = [
-  { keywords: ["우주", "달", "화성", "별", "천문", "망원경", "위성", "로켓", "아르테미스", "NASA", "행성", "은하"], url: "https://images.unsplash.com/photo-1462331940025-496dfbfc7564?w=800&q=80" },
-  { keywords: ["AI", "인공지능", "딥러닝", "머신러닝", "로봇", "자율주행", "반도체", "디지털"], url: "https://images.unsplash.com/photo-1677442135703-1787eea5ce01?w=800&q=80" },
-  { keywords: ["생명", "유전자", "DNA", "세포", "뇌", "신경", "의학", "치료", "바이러스", "백신", "암", "혈액", "당뇨"], url: "https://images.unsplash.com/photo-1530026186672-2cd00ffc50fe?w=800&q=80" },
-  { keywords: ["기후", "환경", "탄소", "온난화", "북극", "빙하", "에너지", "태양광", "풍력", "지구"], url: "https://images.unsplash.com/photo-1421789665209-c9b2a435e3dc?w=800&q=80" },
-  { keywords: ["물리", "화학", "양자", "핵", "초전도", "레이저", "플라즈마", "원소", "분자"], url: "https://images.unsplash.com/photo-1628595351029-c2bf17511435?w=800&q=80" },
-  { keywords: ["바다", "해양", "수산", "어류", "산호", "심해"], url: "https://images.unsplash.com/photo-1518020382113-a7e8fc38eac9?w=800&q=80" },
-  { keywords: ["축제", "전시", "과학관", "교육", "학생", "연구", "실험"], url: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?w=800&q=80" },
-];
-const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1507413245164-6160d8298b31?w=800&q=80";
-
-function getFallbackImage(title: string): string {
-  for (const { keywords, url } of SCIENCE_IMAGES) {
-    if (keywords.some((k) => title.includes(k))) return url;
-  }
-  return DEFAULT_IMAGE;
-}
+/**
+ * 기사 이미지가 없을 때 쓰는 **단색 블록**.
+ *
+ * 예전에는 제목 키워드로 Unsplash 사진을 골랐다(`getFallbackImage`). 그게
+ * "뉴스 이미지가 기사 내용과 안 맞는다" 는 제보의 한 원인이었다 — 말라리아
+ * 기사에 실험실 사진이, 심해 기사에 바다 스톡 사진이 붙었다. **관계없는 사진은
+ * 없는 것보다 나쁘다.** 읽는 사람은 그게 그 기사의 사진이라고 믿는다.
+ *
+ * 학교 파랑(`--primary`, `hsl(221 83% 53%)`)의 단색 SVG 다. 그 위에 이미 있는
+ * "사이언스타임즈" 라벨이 얹히므로, 이미지가 없다는 사실이 그대로 보인다.
+ * `<img src>` 에 그대로 넣을 수 있어 구조를 바꾸지 않는다.
+ */
+const NO_IMAGE =
+  "data:image/svg+xml;charset=utf-8," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 9" preserveAspectRatio="none">' +
+      '<rect width="16" height="9" fill="hsl(221 83% 53%)"/></svg>'
+  );
 
 function useScienceNews() {
   const [newsList, setNewsList] = useState<ScienceNewsItem[]>([]);
@@ -114,16 +114,17 @@ function NewsSlider({ newsList }: { newsList: ScienceNewsItem[] }) {
             rel="noopener noreferrer"
             className="block group"
           >
-            {/* 썸네일: 원본 이미지 우선, 없거나 실패 시 키워드 Unsplash */}
+            {/* 썸네일: 원본 이미지 우선, 없거나 실패하면 학교 파랑 단색.
+                예전에는 제목 키워드로 Unsplash 사진을 골랐다 — 관계없는 사진이
+                붙어서 기사 내용과 안 맞는다는 제보가 있었다. */}
             <div className="relative h-48 w-full overflow-hidden">
               <img
-                src={news.imageUrl ?? getFallbackImage(news.title)}
+                src={news.imageUrl ?? NO_IMAGE}
                 alt={news.title}
                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                 onError={(e) => {
                   const img = e.target as HTMLImageElement;
-                  const fallback = getFallbackImage(news.title);
-                  if (img.src !== fallback) img.src = fallback;
+                  if (img.src !== NO_IMAGE) img.src = NO_IMAGE;
                 }}
               />
               <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
