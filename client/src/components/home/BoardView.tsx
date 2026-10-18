@@ -19,6 +19,7 @@ import {
 import { usePosts } from "@/hooks/use-posts";
 import { useCategories } from "@/hooks/use-categories";
 import { BoardCard } from "@/components/home/BoardCard";
+import { GRID_SHAPE, GridIcon } from "@/components/home/GridIcon";
 
 /**
  * 카드보드 — 학교 새소식과 활동을 갤러리로 본다.
@@ -156,23 +157,38 @@ export function BoardView({
           );
         })}
 
-        {/* 한 화면 개수 */}
-        <div className="ml-auto flex items-center gap-1 p-1 rounded-xl bg-muted">
-          {PER_PAGE_OPTIONS.map((n) => (
-            <button
-              key={n}
-              type="button"
-              aria-pressed={perPage === n}
-              onClick={() => changePerPage(n)}
-              className={`h-9 w-10 rounded-lg text-xs font-bold transition-colors ${
-                perPage === n
-                  ? "bg-card text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {n}
-            </button>
-          ))}
+        {/* 한 화면 개수 — 숫자 대신 배치 모양을 보여준다. 누르기 전에 몇 열인지 보인다. */}
+        <div className="ml-auto flex items-center gap-2">
+          {/* 좁은 화면에서는 숨긴다. 격자 아이콘만으로도 뜻이 통하고, 칩과 같은
+              줄에 있어 자리를 아껴야 한다. */}
+          <span className="hidden sm:inline text-xs font-semibold text-muted-foreground">
+            한 화면
+          </span>
+          <div className="flex items-center gap-1 p-1 rounded-xl bg-muted">
+            {PER_PAGE_OPTIONS.map((n) => {
+              const shape = GRID_SHAPE[n];
+              const on = perPage === n;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  aria-pressed={on}
+                  aria-label={`한 화면에 ${n}개`}
+                  title={`한 화면에 ${n}개`}
+                  onClick={() => changePerPage(n)}
+                  /* 높이 44px 유지. 안쪽 패딩(p-1)까지 더해 컨트롤 전체가 44px 이
+                     되도록 버튼은 h-9(36px) 이다 — 바꾸기 전과 같다. */
+                  className={`h-9 w-10 rounded-lg flex items-center justify-center transition-colors ${
+                    on
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <GridIcon cols={shape.cols} rows={shape.rows} />
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
 
