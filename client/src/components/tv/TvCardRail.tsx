@@ -62,12 +62,12 @@ export function TvCard({
       style={{ width: CARD_W, background: "var(--tv-panel)" }}
     >
       {/*
-        표지 높이를 **비율로** 잡는다(55%). 고정 px 로 두면 남는 공간보다 카드가
+        표지 높이를 **비율로** 잡는다(50%). 고정 px 로 두면 남는 공간보다 카드가
         커져서 아래가 잘린다 — 실제로 80px 이 잘리고 있었다. 비율이면 카드가 늘
         주어진 높이를 정확히 채우므로, 위쪽 뉴스 영역을 조금 바꿔도 다시 계산할
         일이 없다.
       */}
-      <div className="relative w-full shrink-0" style={{ height: "55%" }}>
+      <div className="relative w-full shrink-0" style={{ height: "50%" }}>
         {post.imageUrl ? (
           <img src={post.imageUrl} alt="" className="w-full h-full object-cover object-top" />
         ) : preview ? (

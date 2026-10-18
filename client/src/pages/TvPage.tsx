@@ -224,7 +224,8 @@ export default function TvPage() {
       )}
 
       {/* 카드 줄. 0장이면 아무것도 그리지 않고 뉴스가 자리를 다 쓴다. */}
-      <div className="flex-1 min-h-0 flex flex-col pb-4">
+      {/* 뉴스와 "학교 새소식…" 이 붙어 있어서 위쪽 여백을 줬다. */}
+      <div className="flex-1 min-h-0 flex flex-col pt-5 pb-3">
         <TvCardRail
           posts={cards}
           offset={cardOffset}

@@ -33,7 +33,9 @@ export function TvClock() {
   }, []);
 
   return (
-    <div className="flex items-baseline justify-between gap-8 px-12 pt-8 pb-5">
+    /* 여백을 줄였다. 1080 은 빠듯해서 여기서 아낀 20px 이 아래 카드 글이 잘리고
+       안 잘리고를 가른다. */
+    <div className="flex items-baseline justify-between gap-8 px-12 pt-5 pb-3">
       <h1 className="text-[40px] font-black tracking-tight" style={{ color: "var(--tv-text)" }}>
         미사강변고등학교{" "}
         <span style={{ color: "var(--tv-accent)" }}>과학중점고</span>
