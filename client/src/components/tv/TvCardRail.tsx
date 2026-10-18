@@ -58,16 +58,24 @@ export function TvCard({
 
   return (
     <div
-      className="shrink-0 rounded-3xl overflow-hidden flex flex-col"
+      className="shrink-0 rounded-3xl overflow-hidden flex flex-col h-full"
       style={{ width: CARD_W, background: "var(--tv-panel)" }}
     >
-      {/* 표지 — 16:10 */}
-      <div className="relative w-full shrink-0" style={{ height: CARD_W * 0.625 }}>
+      {/*
+        표지 높이를 **비율로** 잡는다(55%). 고정 px 로 두면 남는 공간보다 카드가
+        커져서 아래가 잘린다 — 실제로 80px 이 잘리고 있었다. 비율이면 카드가 늘
+        주어진 높이를 정확히 채우므로, 위쪽 뉴스 영역을 조금 바꿔도 다시 계산할
+        일이 없다.
+      */}
+      <div className="relative w-full shrink-0" style={{ height: "55%" }}>
         {post.imageUrl ? (
           <img src={post.imageUrl} alt="" className="w-full h-full object-cover object-top" />
         ) : preview ? (
+          /* 위쪽 여백을 배지 높이만큼 비운다. `p-6` 만 주면 "새소식" 배지가
+             첫 줄을 덮어서 글이 반쯤 가려진다. 배지는 `top-5`(20px) + 높이
+             약 41px = 61px 를 차지한다. */
           <p
-            className="absolute inset-0 p-6 text-[26px] leading-snug line-clamp-4"
+            className="absolute inset-0 px-6 pb-6 pt-[76px] text-[26px] leading-snug line-clamp-3"
             style={{ color: "var(--tv-text)" }}
           >
             {preview}
@@ -90,8 +98,8 @@ export function TvCard({
         {corner}
       </div>
 
-      {/* 글 */}
-      <div className="flex flex-col flex-1 min-w-0 p-6 gap-2">
+      {/* 글. `min-h-0` 이 없으면 flex 자식이 내용 높이만큼 버텨서 넘친다. */}
+      <div className="flex flex-col flex-1 min-w-0 min-h-0 overflow-hidden p-5 gap-1.5">
         <span className="text-[24px] font-semibold" style={{ color: "var(--tv-dim)" }}>
           {post.applyEnabled
             ? fmt(post.eventStart, "M월 d일(EEE) HH:mm") || "일시 미정"
@@ -144,17 +152,18 @@ export function TvCardRail({
   const shift = mode === "static" ? 0 : wrapIndex(offset, posts.length) * (CARD_W + GAP);
 
   return (
-    <div className="px-12 overflow-hidden">
-      <p className="text-[28px] font-bold mb-4" style={{ color: "var(--tv-dim)" }}>
+    /* 높이를 **주어진 만큼** 쓴다. 카드가 그 안을 채우므로 넘치지 않는다. */
+    <div className="px-12 h-full min-h-0 flex flex-col">
+      <p className="text-[28px] font-bold mb-3 shrink-0" style={{ color: "var(--tv-dim)" }}>
         학교 새소식과 신청 받는 활동
       </p>
       <div
         /* `justify-center` — 네 장 이하일 때 가운데로 모은다. */
-        className={`flex ${mode === "static" ? "justify-center" : ""}`}
+        className={`flex-1 min-h-0 overflow-hidden flex ${mode === "static" ? "justify-center" : ""}`}
         style={{ gap: GAP }}
       >
         <div
-          className="tv-slide flex"
+          className="tv-slide flex h-full"
           style={{
             gap: GAP,
             transform: `translateX(-${shift}px)`,

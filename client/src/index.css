@@ -122,13 +122,37 @@
 
   background: var(--tv-bg);
   color: var(--tv-text);
-  /* 일시정지 표시와 "연결 확인 중" 이 `absolute` 로 얹힌다. 기준이 없으면
-     문서 전체를 기준으로 삼아 엉뚱한 자리에 붙는다. */
-  position: relative;
   /* 한 화면에 고정. 스크롤이 생기면 TV 에서는 아래쪽을 볼 방법이 없다. */
   width: 100vw;
   height: 100vh;
   overflow: hidden;
+  /* 무대를 가운데 둔다. 화면 비가 다르면 남는 자리는 배경색이다. */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+  **1920×1080 무대.**
+
+  안쪽 크기는 전부 고정 px 다 — 뉴스 영역 540, 카드 폭 400, 제목 54px. 멀리서
+  읽히는 크기를 맞추려면 그래야 하는데, 그러면 다른 해상도에서 비율이 무너진다.
+  2560×1440 모니터에서는 3/4 크기로 보이고 아래가 크게 빈다.
+
+  무대 전체를 `transform: scale()` 로 늘려 **어느 화면에서나 같은 그림**이 되게
+  한다. 글자 크기를 다시 계산할 필요가 없고, 데스크톱에서 본 모습이 곧 TV 에서
+  보일 모습이라 병합 전에 확인할 수 있다. 배율은 `useTvScale` 이 정한다.
+*/
+.tv-stage {
+  width: 1920px;
+  height: 1080px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  transform-origin: center center;
+  /* 일시정지 표시와 "연결 확인 중" 이 `absolute` 로 얹힌다. 기준이 없으면
+     문서 전체를 기준으로 삼아 엉뚱한 자리에 붙는다. */
+  position: relative;
 }
 
 /*

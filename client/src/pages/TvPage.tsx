@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { WifiOff } from "lucide-react";
 import { api } from "@shared/routes";
 import type { ApplicationSummary, PublicCategory } from "@shared/schema";
+import { CATEGORY_DEFAULT_LABELS } from "@shared/categories";
 import { tvQrUrl } from "@shared/homeViews";
 import {
   TV_CARD_SECONDS,
@@ -17,6 +18,7 @@ import {
   type NewsItem,
 } from "@shared/homeViews";
 import { useIdleCursor, useMinuteNow, useTvRotation } from "@/hooks/use-tv-rotation";
+import { useTvScale } from "@/hooks/use-tv-scale";
 import { usePosts } from "@/hooks/use-posts";
 import { TvClock } from "@/components/tv/TvClock";
 import { TvNews, TvNewsEmpty } from "@/components/tv/TvNews";
@@ -135,8 +137,17 @@ export default function TvPage() {
     () => new Map((summaries.data ?? []).map((s) => [s.postId, s])),
     [summaries.data]
   );
+  /**
+   * 게시판 이름. **`home` 은 게시판 목록에 없다** — 예약 id 라 `categories` 테이블에
+   * 들어가지 않는다(`CHECK (id not in ('home','schedule'))`). 그래서 응답에서
+   * 못 찾고 raw id 인 `"home"` 이 화면에 그대로 나왔다.
+   *
+   * 코드 기본값으로 떨어뜨린다. 교사가 이름을 바꾼 게시판은 서버 값이 이긴다.
+   */
   const labelOf = (id: string) =>
-    (categories.data ?? []).find((c) => c.id === id)?.label ?? id;
+    (categories.data ?? []).find((c) => c.id === id)?.label ??
+    CATEGORY_DEFAULT_LABELS[id] ??
+    id;
 
   const articles = realNews(news.data);
   const newsOk = !news.isLoading && newsState(news.data) === "ok" && articles.length > 0;
@@ -150,6 +161,8 @@ export default function TvPage() {
   });
 
   const idle = useIdleCursor();
+  /** 1920×1080 무대를 지금 화면에 맞춘다. 2560×1440 이면 1.333배가 된다. */
+  const scale = useTvScale();
 
   /**
    * PC 를 연결했을 때의 조작. ←/→ 기사, 스페이스 일시정지, F 전체화면,
@@ -195,7 +208,8 @@ export default function TvPage() {
   const current = newsOk ? articles[wrapIndex(newsIndex, articles.length)] : null;
 
   return (
-    <div className={`tv-root flex flex-col ${idle ? "tv-idle" : ""}`}>
+    <div className={`tv-root ${idle ? "tv-idle" : ""}`}>
+      <div className="tv-stage" style={{ transform: `scale(${scale})` }}>
       <TvClock />
 
       {current ? (
@@ -210,7 +224,7 @@ export default function TvPage() {
       )}
 
       {/* 카드 줄. 0장이면 아무것도 그리지 않고 뉴스가 자리를 다 쓴다. */}
-      <div className="flex-1 flex flex-col justify-center pb-4">
+      <div className="flex-1 min-h-0 flex flex-col pb-4">
         <TvCardRail
           posts={cards}
           offset={cardOffset}
@@ -266,6 +280,7 @@ export default function TvPage() {
           <span className="text-[24px] font-semibold">연결 확인 중</span>
         </div>
       )}
+      </div>
     </div>
   );
 }
