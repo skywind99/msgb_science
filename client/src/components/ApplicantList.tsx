@@ -17,7 +17,9 @@ import { useToast } from "@/hooks/use-toast";
 /**
  * 교사용 신청자 명단.
  *
- * 개별 신청자가 화면에 나오는 유일한 곳이다. 담당 교사와 admin 만 서버를 통과한다.
+ * 개별 신청자가 화면에 나오는 유일한 곳이다. 로그인한 교사만 서버를 통과한다
+ * (2026-10-18 이전에는 담당 교사와 admin 만이었다). 확정·삭제는 여전히 담당
+ * 교사와 admin 뿐이고, 서버가 내려주는 `canManage` 로 버튼을 숨긴다.
  * 학생 정보를 다루므로 기본은 접힌 상태로 두고, 펼칠 때 불러온다.
  */
 
@@ -164,6 +166,15 @@ export function ApplicantList({ post }: { post: PublicPost }) {
   const overCapacity =
     roster?.capacity != null && counts.applied > roster.capacity;
 
+  /**
+   * 명단을 **고칠** 수 있는지. 서버가 알려준다(`RosterResponse.canManage`).
+   *
+   * 조회는 교사 전체에게 열려 있지만 확정·삭제는 담당 교사와 admin 뿐이다.
+   * 화면이 스스로 판단할 수 없다 — 공개 응답에 `authorId` 가 없다.
+   * 못 고치는 교사에게는 관리 칸 자체를 숨긴다. 눌러서 403 을 받는 것보다 낫다.
+   */
+  const canManage = roster?.canManage ?? false;
+
   return (
     <section className="rounded-2xl border-2 border-border bg-card overflow-hidden">
       <button
@@ -239,7 +250,9 @@ export function ApplicantList({ post }: { post: PublicPost }) {
                         <th className="py-2 pr-3 font-semibold whitespace-nowrap">상태</th>
                         <th className="py-2 pr-3 font-semibold">남긴 말</th>
                         <th className="py-2 pr-3 font-semibold whitespace-nowrap">신청일시</th>
-                        <th className="py-2 font-semibold whitespace-nowrap">관리</th>
+                        {canManage && (
+                          <th className="py-2 font-semibold whitespace-nowrap">관리</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -266,6 +279,7 @@ export function ApplicantList({ post }: { post: PublicPost }) {
                           <td className="py-2 pr-3 whitespace-nowrap text-xs text-muted-foreground">
                             {fmtDateTime(e.createdAt)}
                           </td>
+                          {canManage && (
                           <td className="py-2 whitespace-nowrap">
                             {confirmDelete === e.id ? (
                               <span className="inline-flex items-center gap-1.5">
@@ -311,6 +325,7 @@ export function ApplicantList({ post }: { post: PublicPost }) {
                               </span>
                             )}
                           </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -318,11 +333,21 @@ export function ApplicantList({ post }: { post: PublicPost }) {
                 </div>
               )}
 
-              <p className="text-xs text-muted-foreground pt-1 border-t border-border">
-                학생이 직접 취소하면 대기자가 자동으로 올라갑니다. 반면 선생님이 여기서
-                삭제한 자리는 자동으로 채워지지 않습니다 — 필요하면 "확정으로"를 눌러
-                직접 올려 주세요. 명단은 활동 종료 30일 후 자동으로 삭제됩니다.
-              </p>
+              {canManage ? (
+                <p className="text-xs text-muted-foreground pt-1 border-t border-border">
+                  학생이 직접 취소하면 대기자가 자동으로 올라갑니다. 반면 선생님이 여기서
+                  삭제한 자리는 자동으로 채워지지 않습니다 — 필요하면 "확정으로"를 눌러
+                  직접 올려 주세요. 명단은 활동 종료 30일 후 자동으로 삭제됩니다.
+                </p>
+              ) : (
+                /* 버튼이 왜 없는지 적어 준다. 아무 설명 없이 비어 있으면
+                   "내 화면만 고장났나" 로 읽힌다. */
+                <p className="text-xs text-muted-foreground pt-1 border-t border-border">
+                  담당 선생님이 올린 활동이라 <span className="font-semibold">보기만 됩니다.</span>{" "}
+                  확정·삭제는 담당 선생님이나 관리자가 합니다. 명단은 활동 종료 30일 후
+                  자동으로 삭제됩니다.
+                </p>
+              )}
             </>
           )}
         </div>

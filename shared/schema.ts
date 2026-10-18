@@ -417,7 +417,8 @@ export function toMyApplication(
 /**
  * 교사용 명단 항목.
  *
- * 개별 신청자가 나가는 유일한 인증 경로다. 담당 교사와 `admin` 만 받을 수 있다.
+ * 개별 신청자가 나가는 유일한 인증 경로다. **로그인한 교사면 받을 수 있다**
+ * (2026-10-18 이전에는 담당 교사와 `admin` 만이었다).
  * 확인 비밀번호 해시는 절대 포함하지 않는다 — 학생이 정한 값이라 해시가 새면
  * 오프라인 대입으로 쉽게 뚫린다.
  */
@@ -456,6 +457,14 @@ export type RosterResponse = {
   postId: number;
   title: string;
   capacity: number | null;
+  /**
+   * 이 명단을 **고칠 수 있는지**. 담당 교사와 `admin` 만 true 다.
+   *
+   * 2026-10-18 에 조회가 교사 전체로 열렸지만 확정·삭제는 담당자로 남았다.
+   * 화면이 공개 응답의 `authorId` 로는 담당자를 알 수 없어서(없다) 서버가
+   * 알려준다. 이 값으로 버튼을 감춘다 — 누르고 403 을 받는 것보다 낫다.
+   */
+  canManage: boolean;
   entries: RosterEntry[];
 };
 

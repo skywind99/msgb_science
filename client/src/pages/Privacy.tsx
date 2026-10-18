@@ -12,7 +12,7 @@ import { ShieldCheck, AlertTriangle } from "lucide-react";
  * | 수집 항목 | `shared/schema.ts` 의 `applications` 테이블 |
  * | 보유 기간 30일 | `script/cleanup.ts` + keep-alive 워크플로 |
  * | 비밀번호 해시 저장 | `server/applyPassword.ts` |
- * | 명단 접근 제한 | `server/routes.ts` 의 `loadOwnedActivity` |
+ * | 명단 접근 제한 | `server/routes.ts` 의 `loadOwnedActivity`, `shared/postPermissions.ts` |
  * | 조회 요청 제한 | `server/rateLimit.ts` 의 `lookupPerStudent` |
  * | 집계만 공개 | `server/applications.ts` 의 `summaryFor` |
  *
@@ -191,8 +191,9 @@ export default function Privacy() {
               저장합니다. 선생님도 관리자도 원래 값을 볼 수 없습니다.
             </li>
             <li>
-              신청자 명단은 <b className="text-foreground">해당 활동의 담당 선생님과 관리자만</b>{" "}
-              볼 수 있습니다.
+              신청자 명단은 <b className="text-foreground">학교 선생님과 관리자만</b> 볼 수
+              있습니다. 명단을 고치거나 지우는 것은{" "}
+              <b className="text-foreground">해당 활동의 담당 선생님과 관리자만</b> 할 수 있습니다.
             </li>
             <li>
               누구나 볼 수 있는 화면에는 <b className="text-foreground">신청 인원수와 남은
