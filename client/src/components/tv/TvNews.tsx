@@ -73,7 +73,10 @@ export function TvNews({
       </div>
 
       {/* 오른쪽 — 글 */}
-      <div className="flex flex-col min-w-0 flex-1 py-2">
+      {/* `overflow-hidden` 은 방어다. 글자 폭을 계산해 줄 수를 정했지만, 글꼴이
+          조금 다르거나 TV 가 배율을 건드리면 한 줄이 더 생길 수 있다. 그때 아래
+          카드 줄로 흘러내리지 않게 한다. */}
+      <div className="flex flex-col min-w-0 flex-1 py-2 overflow-hidden">
         <p
           className="text-[28px] font-bold tracking-wide mb-5"
           style={{ color: "var(--tv-accent)" }}
@@ -88,9 +91,18 @@ export function TvNews({
           {item.title}
         </h2>
 
+        {/*
+          요약 **4줄.** 2줄이던 것을 늘렸다 — 서버가 200자까지 주는데(약 7.4줄
+          분량) 2줄은 1/4 도 못 보여줬다.
+
+          4줄이 한계다. 제목이 최대 3줄까지 늘어나므로, 그때 남는 높이가 219px
+          이고 30px·`leading-relaxed` 로 4.5줄이다. 5줄로 하면 549px 가 되어
+          영역(524px)을 넘는다. 제목이 짧은 기사에서는 아래가 비지만, 줄이 잘려
+          나오는 것보다 낫다.
+        */}
         {item.summary && (
           <p
-            className="text-[30px] leading-relaxed line-clamp-2 mt-6"
+            className="text-[30px] leading-relaxed line-clamp-4 mt-6"
             style={{ color: "var(--tv-dim)" }}
           >
             {item.summary}
