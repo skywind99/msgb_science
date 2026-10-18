@@ -67,7 +67,13 @@ function Cover({ post, shape }: { post: BoardPost; shape: CardShape }) {
           src={post.imageUrl}
           alt=""
           loading="lazy"
-          className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-500"
+          /*
+            `object-top` — 세로로 긴 포스터는 **위쪽부터** 보여준다.
+            기본값(`center`)이면 안내문 가운데가 잘려 나와서, 제목이 맨 위에 있는
+            포스터가 본문 중간만 보인다. 표지가 2:1 로 납작한 4개 보기에서 가장
+            심하다. `object-cover` 는 그대로 둔다 — 비율을 지키며 칸을 채운다.
+          */
+          className="w-full h-full object-cover object-top group-hover:scale-[1.03] transition-transform duration-500"
         />
       ) : (
         <p
