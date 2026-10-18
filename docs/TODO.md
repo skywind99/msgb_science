@@ -351,9 +351,9 @@ DB 확인 결과 `posts.image_url`·`posts.blocks` 의 `imageUrl`·`popups.image
 
 PR 1(툴바·카드보드·뉴스·스크래핑 견고화)은 `feat/home-views` 에 있다.
 
-### PR 2 — TV 모드 (`/tv`)
+### 완료: PR 2 — TV 모드 (`/tv`, 2026-10-18 구현, 병합 대기)
 
-아직 시작하지 않았다. 승인된 설계는 아래와 같다.
+`feat/tv-mode` 에 있다. 아래는 그대로 지킨 설계다.
 
 - **라우트를 `Router()` 안에 둘 수 없다.** 헤더·푸터가 `App.tsx` 의 `Router()` 안에서
   모든 라우트를 감싸고, `PopupDisplay` 는 그 바깥 `App` 에 있다. `Switch` 에 넣으면
@@ -380,6 +380,15 @@ PR 1(툴바·카드보드·뉴스·스크래핑 견고화)은 `feat/home-views` 
 
 판정 함수는 **이미 `shared/homeViews.ts` 에 있고 시험을 통과했다**
 (`tvItems`·`tvQrUrl`·`tvRailMode`·`wrapIndex`·`indexAtElapsed`·`clampSeconds`).
+구현에서 새 판정을 만들지 않았다.
+
+**구현에서 더해진 것** (계획에 없던 것):
+- `useMinuteNow()` — 활동 단계 판정용 시계를 회전 훅에서 떼어냈다. 카드 목록이
+  `now` 를 쓰고 회전 훅이 카드 수를 쓰므로, 한 훅에 두면 서로를 기다린다.
+- 숨긴 게시판을 **"목록에 없는 게시판"** 으로 본다. TV 는 비로그인이라 `hidden` 이
+  응답에 오지 않는다.
+- 툴바 네 버튼이 400px 미만에서 **아이콘만** 된다. 320px 에서 두 줄이 되던 문제.
+- QR 을 **한 번 더** 지연 로딩한다. 신청 받는 중인 활동이 없는 날에는 안 받는다.
 PR 2 는 화면만 만들면 된다.
 
 ### 규모 — 글이 300개를 넘으면 목록 API 를 쪼갠다
