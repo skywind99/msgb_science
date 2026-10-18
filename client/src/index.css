@@ -102,3 +102,45 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/*
+  TV 화면(/tv) 테마.
+
+  **`.tv-root` 안에서만 쓴다.** 전역 토큰(`:root` 의 `--background` 등)을 건드리지
+  않으므로 기존 사이트 색에 영향이 없다. TV 는 멀리서 보는 화면이라 배경이 짙고
+  글자가 커야 하는데, 그 값을 전역에 두면 사이트 전체가 어두워진다.
+
+  가장 작은 글자도 24px 이상이다. 1920x1080 TV 를 3~5m 떨어져 보는 기준이다.
+*/
+.tv-root {
+  --tv-bg: #0b1730;
+  --tv-panel: #122247;
+  --tv-line: #1e3566;
+  --tv-text: #f8fafc;
+  --tv-dim: #94a8cc;
+  --tv-accent: #3b82f6;
+
+  background: var(--tv-bg);
+  color: var(--tv-text);
+  /* 한 화면에 고정. 스크롤이 생기면 TV 에서는 아래쪽을 볼 방법이 없다. */
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 커서를 숨긴 상태. 사람이 조작하지 않는 화면이라 기본이 숨김에 가깝다. */
+.tv-root.tv-idle,
+.tv-root.tv-idle * {
+  cursor: none;
+}
+
+/*
+  움직임을 줄이고 싶다는 설정이면 밀어내기 대신 겹쳐 사라지게 한다.
+  멀리서 보는 큰 화면에서 가로 이동은 멀미를 부를 수 있다.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .tv-root .tv-slide {
+    transition: opacity 400ms ease !important;
+    transform: none !important;
+  }
+}

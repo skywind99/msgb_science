@@ -1,4 +1,5 @@
-import { Switch, Route } from "wouter";
+import { Switch, Route, useLocation } from "wouter";
+import { Suspense, lazy } from "react";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -14,6 +15,12 @@ import Privacy from "@/pages/Privacy";
 import NotFound from "@/pages/not-found";
 import { PopupDisplay } from "@/components/PopupDisplay";
 import { useCategories } from "@/hooks/use-categories";
+
+/**
+ * TV 화면은 **지연 로딩**한다. 켜 두는 화면이라 처음 한 번 더 기다리는 것은
+ * 상관없고, 대신 메인 번들에서 TV 코드와 QR 라이브러리가 빠진다.
+ */
+const TvPage = lazy(() => import("@/pages/TvPage"));
 
 function Router() {
   // 푸터의 "주요메뉴" 가 쓴다. 숨긴 게시판은 저절로 빠진다.
@@ -101,14 +108,41 @@ function Router() {
   );
 }
 
+/**
+ * `/tv` 를 **가장 먼저 가른다.**
+ *
+ * 헤더·푸터가 `Router()` 안에서 모든 라우트를 감싸고, `Toaster`·`PopupDisplay` 는
+ * 그 바깥에 있다. `Switch` 안에 `/tv` 를 넣으면 **헤더·푸터·팝업·알림이 다 따라
+ * 온다.** TV 는 사람이 조작하지 않는 화면이라 그것들이 있으면 안 된다.
+ *
+ * **그 외 경로에서는 트리가 글자 하나 다르지 않다** — 아래 `else` 쪽이 바꾸기 전과
+ * 같은 세 줄이다.
+ */
+function Shell() {
+  const [location] = useLocation();
+  // 쿼리스트링은 `location` 에 들어오지 않는다. `/tv?news=10` 도 여기서 걸린다.
+  if (location === "/tv") {
+    return (
+      <Suspense fallback={<div className="min-h-screen" style={{ background: "#0b1730" }} />}>
+        <TvPage />
+      </Suspense>
+    );
+  }
+  return (
+    <>
+      <Toaster />
+      <PopupDisplay />
+      <Router />
+    </>
+  );
+}
+
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AdminProvider>
-          <Toaster />
-          <PopupDisplay />
-          <Router />
+          <Shell />
         </AdminProvider>
       </TooltipProvider>
     </QueryClientProvider>
