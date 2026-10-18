@@ -513,8 +513,8 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
           </div>
           <p className="text-xs text-muted-foreground">
             나중에 신청 내용을 확인하거나 취소할 때 쓰는 <b>나만의 비밀번호</b>입니다.
-            직접 정하고 꼭 기억해 주세요. "우리반최고" 처럼 기억하기 쉬운 한국어 단어가
-            네 자리 숫자보다 안전합니다.
+            직접 정하고 꼭 기억해 주세요. <b>친구가 아는 숫자</b>(생일·전화번호 뒷자리)는
+            피하고, "우리반최고" 처럼 기억하기 쉬운 한국어 단어를 쓰면 더 안전합니다.
           </p>
 
           <Field label="확인 비밀번호">
@@ -522,7 +522,7 @@ export function ApplyDialog({ post, onClose }: { post: PublicPost; onClose: () =
               type="password"
               value={myPassword}
               onChange={(e) => setMyPassword(e.target.value)}
-              placeholder="4자 이상 (숫자만 쓸 때는 6자 이상)"
+              placeholder="4자 이상"
               maxLength={MAX_LENGTH}
               disabled={pending}
               className={inputClass}

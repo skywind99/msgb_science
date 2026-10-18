@@ -1,113 +1,46 @@
 /**
  * 학생이 직접 정하는 확인 비밀번호 규칙.
  *
- * 원래는 서버가 6자리 랜덤 코드를 발급했다. 학생이 외우기 어렵다는 이유로
- * 직접 정하는 방식으로 바꿨다. 대신 **랜덤보다 훨씬 약해진다** —
- * 그냥 두면 절반이 `1234`, `0000`, 생년월일을 쓴다.
+ * ## 2026-10-18 — 강도 검사를 전부 뺐다
  *
- * 게다가 이 맥락에서는 공격자가 대상을 정확히 안다. 같은 반 친구의
- * 학년·반·번호는 다 알고 있으므로, 흔한 번호 몇 개만 찍어보면 남의 신청을
- * 취소할 수 있다. 그래서 아래 두 가지가 **함께** 있어야 한다.
+ * 원래는 흔한 값·반복·연속·생년월일·자기 학번을 거부하고, 숫자만 쓸 때는 6자를
+ * 요구했다. 학생이 쓰기 어렵다는 이유로 **길이와 공백만 남기고 모두 해제**했다.
+ * `1234` 도 `0000` 도 생년월일도 통과한다.
  *
- * 1. 추측하기 쉬운 값 거부 (이 파일)
- * 2. 조회·취소 실패 횟수 제한 (`server/rateLimit.ts` 의 `lookupPerStudent`)
+ * **그래서 `server/rateLimit.ts` 의 요청 제한이 유일한 방어다.**
  *
- * 장시간 잠금은 두지 않기로 했다. 학교에서 하루 잠기면 학생이 결국 교사를 찾아가고,
- * 그게 이 설계로 피하려던 부담이다. 대신 이 파일의 규칙이 유일한 강도 방어이므로
- * **규칙을 느슨하게 만들 때는 요청 제한도 함께 봐야 한다.**
+ * 왜 그게 중요한지 적어 둔다. 이 맥락의 공격은 "한 학생을 집중해서 찍기" 가
+ * 아니라 **"흔한 값 하나를 전교생 번호에 한 번씩 찍기"** 다. 그 수법은 학생당
+ * 1회라 `lookupPerStudent`(실패 5회/10분)에 **절대 걸리지 않는다.** 막는 것은
+ * `lookupPerIp`(실패 20회/1시간) 하나뿐이다.
  *
- * 한글도 쓸 수 있다. "우리반최고" 처럼 기억하기 쉬운 한국어 단어가
- * 네 자리 숫자보다 훨씬 안전하다. 안내 문구에서 이걸 권한다.
+ * - **`lookupPerIp` 를 없애거나 늘리면 전교생 명단이 긁힌다.** 조회·취소 쪽을
+ *   고칠 때 이 파일을 같이 볼 것
+ * - 뚫렸을 때 드러나는 것은 그 학생의 이름·학년·반·번호·메모·상태다
+ *
+ * 되돌리려면 이 파일의 git 기록에서 `checkStudentPassword` 의 예전 본문을
+ * 가져오면 된다(`COMMON`·`looksLikeDate`·`studentNumberForms` 등).
+ *
+ * 한글도 쓸 수 있다. "우리반최고" 처럼 기억하기 쉬운 한국어 단어가 네 자리
+ * 숫자보다 안전하다. 안내 문구에서 권하기만 하고 **강제하지는 않는다.**
  */
 
 export const MIN_LENGTH = 4;
 export const MAX_LENGTH = 20;
-/** 숫자만 쓸 경우엔 더 길어야 한다. 네 자리 숫자는 만 가지뿐이다. */
-export const MIN_DIGIT_ONLY_LENGTH = 6;
-
-/** 실제 유출 목록 상위권 + 한국에서 흔한 조합 */
-const COMMON = new Set([
-  "1234", "12345", "123456", "1234567", "12345678", "123456789",
-  "0000", "00000", "000000", "1111", "11111", "111111",
-  "2222", "222222", "3333", "333333", "6666", "666666",
-  "7777", "777777", "8888", "888888", "9999", "999999",
-  "1212", "121212", "1122", "112233", "123123", "123321",
-  "1004", "10041004", "1010", "1313", "2580", "0852",
-  "159753", "147258", "13579", "2468",
-  "qwer", "qwerty", "qwerty123", "asdf", "asdfgh", "zxcv",
-  "abcd", "abcde", "abcdef", "password", "passwd", "admin",
-  "1q2w", "1q2w3e", "1q2w3e4r", "qlalfqjsgh", // "비밀번호" 두벌식
-  "love", "iloveyou", "school", "student",
-]);
-
-const onlyDigits = (s: string) => /^\d+$/.test(s);
-
-/** 0000, aaaa 처럼 같은 글자만 반복 */
-const allSame = (s: string) => /^(.)\1+$/.test(s);
-
-/** 1234, 4321, abcd 처럼 한 칸씩 오르거나 내리는 값 */
-function isSequential(s: string): boolean {
-  if (s.length < 3) return false;
-  const step = s.charCodeAt(1) - s.charCodeAt(0);
-  if (step !== 1 && step !== -1) return false;
-  for (let i = 2; i < s.length; i++) {
-    if (s.charCodeAt(i) - s.charCodeAt(i - 1) !== step) return false;
-  }
-  return true;
-}
-
-/**
- * 생년월일 형태.
- *
- * 학생이 6자리를 정하라고 하면 대부분 생년월일을 쓴다. 같은 학년이면 태어난 해가
- * 거의 정해져 있어서 실제로는 몇백 가지밖에 안 된다. 반드시 막아야 한다.
- */
-function looksLikeDate(s: string): boolean {
-  if (!onlyDigits(s)) return false;
-
-  const mmdd = (mm: string, dd: string) => {
-    const m = Number(mm);
-    const d = Number(dd);
-    return m >= 1 && m <= 12 && d >= 1 && d <= 31;
-  };
-
-  // YYMMDD
-  if (s.length === 6 && mmdd(s.slice(2, 4), s.slice(4, 6))) return true;
-  // YYYYMMDD
-  if (s.length === 8) {
-    const year = Number(s.slice(0, 4));
-    if (year >= 1900 && year <= 2099 && mmdd(s.slice(4, 6), s.slice(6, 8))) return true;
-  }
-  return false;
-}
-
-/** 학년·반·번호를 이어붙인 값들. 친구가 그대로 찍어볼 수 있다. */
-function studentNumberForms(who: {
-  grade: number;
-  classNo: number;
-  studentNo: number;
-}): string[] {
-  const { grade, classNo, studentNo } = who;
-  const p2 = (n: number) => String(n).padStart(2, "0");
-  return [
-    `${grade}${classNo}${studentNo}`,
-    `${grade}${p2(classNo)}${p2(studentNo)}`,
-    `${p2(grade)}${p2(classNo)}${p2(studentNo)}`,
-    `${grade}0${classNo}0${studentNo}`,
-    `${classNo}${studentNo}`,
-    `${p2(classNo)}${p2(studentNo)}`,
-  ];
-}
 
 /**
  * 비밀번호를 검사한다. 문제가 있으면 학생에게 보여줄 문구를, 없으면 null 을 반환한다.
  *
- * `who` 를 넘기면 자기 학년·반·번호를 그대로 쓴 경우도 걸러낸다.
- * 클라이언트는 입력 중에, 서버는 접수 직전에 같은 함수를 쓴다.
+ * 남은 것은 **길이와 공백뿐**이다. 둘 다 강도가 아니라 형식 문제다 — 공백은
+ * 앞뒤가 눈에 안 보여서 "분명히 맞게 쳤는데 안 된다" 를 만든다.
+ *
+ * `who`(학년·반·번호)는 더 이상 쓰지 않지만 **인자는 남겨 둔다.** 부르는 쪽이
+ * 셋(화면·서버 스키마·시험)이라, 지우면 그쪽을 다 고쳐야 하고 되돌릴 때 또
+ * 고쳐야 한다.
  */
 export function checkStudentPassword(
   raw: string,
-  who?: { grade: number; classNo: number; studentNo: number }
+  _who?: { grade: number; classNo: number; studentNo: number }
 ): string | null {
   const pw = raw.trim();
 
@@ -119,26 +52,6 @@ export function checkStudentPassword(
   }
   if (/\s/.test(pw)) {
     return "비밀번호에 공백은 쓸 수 없습니다.";
-  }
-  if (onlyDigits(pw) && pw.length < MIN_DIGIT_ONLY_LENGTH) {
-    return `숫자만 쓸 때는 ${MIN_DIGIT_ONLY_LENGTH}자 이상이어야 합니다. 글자를 섞으면 ${MIN_LENGTH}자도 됩니다.`;
-  }
-
-  const lower = pw.toLowerCase();
-  if (COMMON.has(lower)) {
-    return "너무 흔한 비밀번호입니다. 친구가 쉽게 맞힐 수 있습니다.";
-  }
-  if (allSame(pw)) {
-    return "같은 문자만 반복할 수 없습니다.";
-  }
-  if (isSequential(lower)) {
-    return "1234 처럼 이어지는 값은 쓸 수 없습니다.";
-  }
-  if (looksLikeDate(pw)) {
-    return "생년월일은 친구가 쉽게 맞힐 수 있어 쓸 수 없습니다.";
-  }
-  if (who && studentNumberForms(who).includes(pw)) {
-    return "학년·반·번호를 그대로 쓸 수 없습니다.";
   }
 
   return null;
