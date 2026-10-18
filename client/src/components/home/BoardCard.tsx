@@ -29,6 +29,18 @@ const STAGE: Record<ActivityStage, { label: string; chip: string; dot: string }>
 
 const NEWS = { label: "새소식", chip: "bg-blue-100 text-blue-800", dot: "bg-blue-500" };
 
+/**
+ * 정보형(4개 보기) 카드의 상태 배지가 표지 왼쪽 위를 덮는 높이.
+ *
+ * **미리보기 글은 이만큼 내려서 시작한다.** 배지는 `top-3`(12px)에 놓이고 높이가
+ * 약 21px 라 33px 까지 차지하는데, 미리보기가 `p-4`(16px)에서 시작해서 **첫 줄이
+ * 배지에 덮였다.** 표지 사진이 있는 카드에서는 배지가 사진 위에 얹혀 자연스러운데,
+ * 사진이 없어 글이 깔린 카드에서만 문제가 된다.
+ *
+ * 배지 위치(`top-3`)를 바꿀 때는 이 값도 같이 봐야 한다.
+ */
+const INFO_BADGE_CLEARANCE = "pt-10";
+
 const ASPECT: Record<CardShape, string> = {
   info: "aspect-[2/1]",
   standard: "aspect-[16/10]",
@@ -126,7 +138,10 @@ function Cover({
         /* 위에서부터 읽히게. 본문색(`text-foreground`)을 쓰고 크기도 올렸다 —
            표지가 없는 글에서는 이 글자가 유일한 내용이다. */
         <p
-          className={`absolute inset-0 p-4 text-foreground whitespace-pre-wrap ${PREVIEW[shape]}`}
+          className={`absolute inset-0 px-4 pb-4 text-foreground whitespace-pre-wrap ${
+            /* 배지는 정보형에만 얹힌다. 나머지 보기는 위 여백이 그대로다. */
+            shape === "info" ? INFO_BADGE_CLEARANCE : "pt-4"
+          } ${PREVIEW[shape]}`}
         >
           {text}
         </p>
@@ -159,7 +174,9 @@ export function BoardCard({
     >
       <div className="relative">
         <Cover post={post} shape={shape} categoryLabel={categoryLabel} />
-        {/* 정보형은 배지를 표지 왼쪽 위에 얹는다. 나머지는 아래 줄에 둔다. */}
+        {/* 정보형은 배지를 표지 왼쪽 위에 얹는다. 나머지는 아래 줄에 둔다.
+            표지에 글이 깔린 카드에서 첫 줄을 덮지 않게, 미리보기가
+            `INFO_BADGE_CLEARANCE` 만큼 내려서 시작한다. */}
         {shape === "info" && (
           <span
             className={`absolute top-3 left-3 px-2 py-0.5 rounded-full text-[11px] font-bold ${badge.chip}`}
