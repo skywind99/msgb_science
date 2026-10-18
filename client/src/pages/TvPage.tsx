@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from "react";
+import { Suspense, lazy, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { WifiOff } from "lucide-react";
 import { api } from "@shared/routes";
 import type { ApplicationSummary, PublicCategory } from "@shared/schema";
+import { tvQrUrl } from "@shared/homeViews";
 import {
   TV_CARD_SECONDS,
   TV_NEWS_SECONDS,
@@ -20,6 +21,13 @@ import { usePosts } from "@/hooks/use-posts";
 import { TvClock } from "@/components/tv/TvClock";
 import { TvNews, TvNewsEmpty } from "@/components/tv/TvNews";
 import { TvCardRail } from "@/components/tv/TvCardRail";
+
+/**
+ * QR 은 **한 번 더 지연 로딩**한다. `TvPage` 자체가 이미 별도 청크지만, QR 은
+ * 신청 받는 중인 활동이 있을 때만 필요하다 — 그런 활동이 없는 날에는 내려받지
+ * 않는다.
+ */
+const TvQr = lazy(() => import("@/components/tv/TvQr"));
 
 /**
  * TV 화면 (`/tv`).
@@ -209,6 +217,20 @@ export default function TvPage() {
           labelOf={labelOf}
           summaryByPost={summaryByPost}
           now={now}
+          /* **신청 받는 중인 활동에만** QR 을 붙인다. 신청 예정 활동에 붙이면
+             찍어 간 학생이 "아직 신청 기간이 아닙니다" 를 보게 된다. */
+          renderCorner={(post, stage) => {
+            if (stage !== "open") return null;
+            const url = tvQrUrl(window.location.origin, post.id);
+            if (!url) return null;
+            return (
+              <div className="absolute bottom-4 right-4">
+                <Suspense fallback={null}>
+                  <TvQr url={url} />
+                </Suspense>
+              </div>
+            );
+          }}
         />
       </div>
 
