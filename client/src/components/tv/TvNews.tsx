@@ -81,7 +81,7 @@ export function TvNews({
           className="text-[28px] font-bold tracking-wide mb-5"
           style={{ color: "var(--tv-accent)" }}
         >
-          오늘의 과학 뉴스
+          최신 과학 뉴스
         </p>
 
         <h2
