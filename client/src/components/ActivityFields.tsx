@@ -82,6 +82,38 @@ export function activityFromPost(post: PublicPost): ActivityDraft {
  * - 사용 + 공백 → 아무것도 보내지 않는다 (기존 비밀번호 유지)
  */
 export function activityToPayload(a: ActivityDraft, mode: "create" | "update") {
+  /**
+   * **신청을 받지 않는 새 글이면 활동 값을 보내지 않는다.**
+   *
+   * 패널은 "활동 신청 받기" 를 끄면 활동 칸을 **숨긴다.** 그런데 값은 폼에 남아
+   * 그대로 전송되고, 서버는 일시 앞뒤를 검사한다. 그래서 AI 가 종료 날짜를
+   * 엉뚱하게 채워 놓으면 **보이지도 않는 칸 때문에 등록이 막히고, 토글을 꺼도
+   * 풀리지 않는 막다른 길**이 된다. (2026-10-21 제보)
+   *
+   * 비우는 것은 **보내는 값뿐이다.** 폼 상태는 그대로 두므로 교사가 토글을
+   * 다시 켜면 입력해 둔 값이 그대로 돌아온다.
+   *
+   * **새 글(create)에서만 한다.** 수정에서 같은 짓을 하면 토글을 껐다 저장하는
+   * 순간 **이미 저장돼 있던 일시·장소·정원이 지워진다.** 되돌릴 방법이 없다.
+   * 수정 화면은 칸이 숨지 않아 사용자가 직접 고칠 수 있으므로 급하지도 않다.
+   */
+  if (mode === "create" && !a.applyEnabled) {
+    return {
+      applyEnabled: false,
+      eventStart: null,
+      eventEnd: null,
+      location: null,
+      capacity: null,
+      applyStart: null,
+      applyDeadline: null,
+      applyNote: null,
+      // 표의 기본값(`allow_waitlist` default true). 신청을 안 받으니 쓰이지 않지만
+      // 열이 notNull 이라 기본값을 분명히 적어 둔다.
+      allowWaitlist: true,
+      // 비밀번호는 아예 보내지 않는다. 신청을 받지 않는 글에 둘 이유가 없다.
+    };
+  }
+
   const base = {
     applyEnabled: a.applyEnabled,
     eventStart: toIso(a.eventStart),
