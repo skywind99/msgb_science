@@ -192,7 +192,26 @@ export function applyAiDates(
   //    AI 의 날짜로 판정하면 화면의 날짜와 어긋난 종료일이 들어간다
   if (filled.includes("date")) {
     const endDate = ai.endDate ?? "";
-    if (endDate && endDate !== date) {
+
+    /**
+     * **시작보다 이른 종료 날짜는 버린다.**
+     *
+     * AI 가 "10월 10일 신청 마감" 같은 다른 날짜를 종료일로 읽는 일이 있다.
+     * 그대로 넣으면 여러 날 토글이 켜진 채 종료가 시작보다 앞선 **저장할 수
+     * 없는 폼**이 만들어지고, 교사는 자기가 켜지도 않은 토글 때문에 막힌다.
+     * (2026-10-21 제보)
+     *
+     * 하루짜리로 둔다 — 교사가 고치기 쉽고, 틀린 값을 보여 주는 것보다 낫다.
+     * 날짜만 비교한다. `yyyy-MM-dd` 라 문자열 비교로 충분하다.
+     */
+    const endsBeforeStart = !!endDate && endDate < date;
+
+    if (endsBeforeStart) {
+      // 토글을 켜지 않고 종료 날짜도 채우지 않는다. 보라색 표시에도 넣지 않는다 —
+      // 쓰지 않은 값을 "AI 가 채웠다" 고 알릴 이유가 없다.
+      next.multiDay = false;
+      next.endDate = "";
+    } else if (endDate && endDate !== date) {
       // 하루 뒤 + 종료 시각이 더 이르면 자정을 넘긴 하루짜리다.
       // 이때 multiDay 를 켜면 "여러 날 활동" 으로 잘못 보이고, 끄면 자동 +1 이
       // 같은 결과를 만든다. 끄는 쪽이 맞다.
