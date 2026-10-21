@@ -192,7 +192,26 @@ export function applyAiDates(
   //    AI 의 날짜로 판정하면 화면의 날짜와 어긋난 종료일이 들어간다
   if (filled.includes("date")) {
     const endDate = ai.endDate ?? "";
-    if (endDate && endDate !== date) {
+
+    /**
+     * **시작보다 이른 종료 날짜는 버린다.**
+     *
+     * AI 가 "10월 10일 신청 마감" 같은 다른 날짜를 종료일로 읽는 일이 있다.
+     * 그대로 넣으면 여러 날 토글이 켜진 채 종료가 시작보다 앞선 **저장할 수
+     * 없는 폼**이 만들어지고, 교사는 자기가 켜지도 않은 토글 때문에 막힌다.
+     * (2026-10-21 제보)
+     *
+     * 하루짜리로 둔다 — 교사가 고치기 쉽고, 틀린 값을 보여 주는 것보다 낫다.
+     * 날짜만 비교한다. `yyyy-MM-dd` 라 문자열 비교로 충분하다.
+     */
+    const endsBeforeStart = !!endDate && endDate < date;
+
+    if (endsBeforeStart) {
+      // 토글을 켜지 않고 종료 날짜도 채우지 않는다. 보라색 표시에도 넣지 않는다 —
+      // 쓰지 않은 값을 "AI 가 채웠다" 고 알릴 이유가 없다.
+      next.multiDay = false;
+      next.endDate = "";
+    } else if (endDate && endDate !== date) {
       // 하루 뒤 + 종료 시각이 더 이르면 자정을 넘긴 하루짜리다.
       // 이때 multiDay 를 켜면 "여러 날 활동" 으로 잘못 보이고, 끄면 자동 +1 이
       // 같은 결과를 만든다. 끄는 쪽이 맞다.
@@ -418,6 +437,19 @@ export function ActivityPanel({
   const isPastDate = !!value.date && value.date < todayInKst();
 
   /**
+   * 종료 날짜가 시작 날짜보다 이른 상태. **저장이 막히는 유일한 날짜 조건이다.**
+   *
+   * 등록을 눌러야 알 수 있으면 늦다 — 서버 문구("종료 일시가 시작 일시보다
+   * 빠릅니다")는 토스트로만 떠서 **어느 칸인지 가리키지 못한다.** 칸 아래에
+   * 바로 적어 둔다. (2026-10-21 제보)
+   *
+   * `min` 속성이 달려 있지만 달력으로 고를 때만 막는다. 직접 타이핑하거나
+   * AI 가 채운 값에는 걸리지 않는다.
+   */
+  const endBeforeStart =
+    value.multiDay && !!value.endDate && !!value.date && value.endDate < value.date;
+
+  /**
    * 신청 기간이 이미 지났는가. **활동 날짜와 따로 봐야 한다.**
    *
    * 예전에는 과거 경고가 날짜 칸에만 있었다. 그래서 마감이 과거로 들어가면
@@ -528,8 +560,18 @@ export function ActivityPanel({
                 value={value.endDate}
                 min={value.date || undefined}
                 onChange={(e) => set("endDate", e.target.value)}
-                className={cls("endDate")}
+                aria-invalid={endBeforeStart}
+                className={
+                  endBeforeStart
+                    ? `${cls("endDate")} border-destructive focus:border-destructive`
+                    : cls("endDate")
+                }
               />
+              {endBeforeStart && (
+                <p className="text-xs text-destructive font-medium">
+                  종료 날짜가 시작 날짜보다 빨라요.
+                </p>
+              )}
             </Field>
           )}
 
