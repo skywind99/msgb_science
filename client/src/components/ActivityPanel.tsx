@@ -437,6 +437,19 @@ export function ActivityPanel({
   const isPastDate = !!value.date && value.date < todayInKst();
 
   /**
+   * 종료 날짜가 시작 날짜보다 이른 상태. **저장이 막히는 유일한 날짜 조건이다.**
+   *
+   * 등록을 눌러야 알 수 있으면 늦다 — 서버 문구("종료 일시가 시작 일시보다
+   * 빠릅니다")는 토스트로만 떠서 **어느 칸인지 가리키지 못한다.** 칸 아래에
+   * 바로 적어 둔다. (2026-10-21 제보)
+   *
+   * `min` 속성이 달려 있지만 달력으로 고를 때만 막는다. 직접 타이핑하거나
+   * AI 가 채운 값에는 걸리지 않는다.
+   */
+  const endBeforeStart =
+    value.multiDay && !!value.endDate && !!value.date && value.endDate < value.date;
+
+  /**
    * 신청 기간이 이미 지났는가. **활동 날짜와 따로 봐야 한다.**
    *
    * 예전에는 과거 경고가 날짜 칸에만 있었다. 그래서 마감이 과거로 들어가면
@@ -547,8 +560,18 @@ export function ActivityPanel({
                 value={value.endDate}
                 min={value.date || undefined}
                 onChange={(e) => set("endDate", e.target.value)}
-                className={cls("endDate")}
+                aria-invalid={endBeforeStart}
+                className={
+                  endBeforeStart
+                    ? `${cls("endDate")} border-destructive focus:border-destructive`
+                    : cls("endDate")
+                }
               />
+              {endBeforeStart && (
+                <p className="text-xs text-destructive font-medium">
+                  종료 날짜가 시작 날짜보다 빨라요.
+                </p>
+              )}
             </Field>
           )}
 
