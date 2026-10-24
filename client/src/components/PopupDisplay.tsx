@@ -165,25 +165,40 @@ function PopupCard({
   /** 사이트 안 링크인가. 같은 탭에서 열지, 새 탭으로 열지가 갈린다. */
   const internal = !isPreview && !!onLinkClick && isInternalLink(popup.linkUrl, origin);
 
+  /**
+   * 이미지가 있으면 **PC 에서만** 카드를 넓힌다(448px → 672px).
+   *
+   * 자르지 않고 원본 비율로 보여주면 세로 포스터는 양옆이 남고 가로 사진은
+   * 납작해진다. 좁은 카드에서는 어느 쪽도 읽히지 않는다.
+   *
+   * 모바일은 그대로다 — 화면보다 넓어질 수 없으므로 넓혀 봐야 의미가 없다.
+   * 글만 있는 팝업도 그대로다. 글 몇 줄을 672px 로 늘리면 오히려 읽기 나쁘다.
+   */
+  const hasImage = !!popup.imageUrl;
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.92, y: 20 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.92, y: 20 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      className="relative bg-white rounded-2xl shadow-2xl overflow-hidden w-full max-w-md"
+      className={`relative bg-white rounded-2xl shadow-2xl overflow-hidden w-full ${
+        hasImage ? "max-w-md md:max-w-2xl" : "max-w-md"
+      }`}
       onClick={(e) => e.stopPropagation()}
     >
       {/* 상단 우측: 닫기 + 카운터 */}
       <div className="absolute top-3 right-3 flex items-center gap-2 z-10">
         {total > 1 && (
-          <span className="px-2 py-1 rounded-full bg-black/30 text-white text-xs font-bold">
+          <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs font-bold">
             {current} / {total}
           </span>
         )}
+        {/* 이미지를 자르지 않게 되면서 **버튼이 연한 회색 여백 위에 올 수 있다.**
+            흰 아이콘이 묻히지 않도록 배경을 진하게 했다. 자리는 그대로다. */}
         <button
           onClick={onClose}
-          className="p-1.5 rounded-full bg-black/20 hover:bg-black/40 text-white transition-colors"
+          className="p-1.5 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -196,10 +211,18 @@ function PopupCard({
         </div>
       )}
 
-      {/* 이미지 */}
+      {/* 이미지 — **자르지 않는다.**
+          예전에는 높이 208px 에 `object-cover` 라 어떤 비율이든 **가운데만 남고
+          위아래가 잘렸다.** 세로 포스터는 글자가 통째로 사라졌다.
+          이제 원본 비율 그대로 두고 높이만 화면의 60% 로 제한한다. 비율이 남는
+          양옆·위아래는 연한 회색으로 채운다. */}
       {popup.imageUrl && (
-        <div className="w-full h-52 overflow-hidden bg-gray-100">
-          <img src={popup.imageUrl} alt={popup.title} className="w-full h-full object-cover" />
+        <div className="flex items-center justify-center bg-gray-100">
+          <img
+            src={popup.imageUrl}
+            alt={popup.title}
+            className="max-h-[60vh] max-w-full w-auto object-contain"
+          />
         </div>
       )}
 
