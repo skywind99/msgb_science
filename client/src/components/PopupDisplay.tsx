@@ -182,7 +182,9 @@ function PopupCard({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.92, y: 20 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      className={`relative bg-white rounded-2xl shadow-2xl overflow-hidden w-full ${
+      /* 세로 배치 + 화면의 90% 상한. 큰 이미지에 긴 글이 붙어도 카드가 화면을
+         넘지 않고, **본문만 스크롤돼 버튼 줄이 항상 보인다.** */
+      className={`relative bg-white rounded-2xl shadow-2xl overflow-hidden w-full flex flex-col max-h-[90vh] ${
         hasImage ? "max-w-md md:max-w-2xl" : "max-w-md"
       }`}
       onClick={(e) => e.stopPropagation()}
@@ -217,7 +219,9 @@ function PopupCard({
           이제 원본 비율 그대로 두고 높이만 화면의 60% 로 제한한다. 비율이 남는
           양옆·위아래는 연한 회색으로 채운다. */}
       {popup.imageUrl && (
-        <div className="flex items-center justify-center bg-gray-100">
+        /* `shrink-0` 이 있어야 세로 배치에서 이미지가 눌리지 않는다. 눌리면
+           `object-contain` 이 비율을 지키느라 좌우가 더 비고 그림만 작아진다. */
+        <div className="shrink-0 flex items-center justify-center bg-gray-100">
           <img
             src={popup.imageUrl}
             alt={popup.title}
@@ -226,60 +230,65 @@ function PopupCard({
         </div>
       )}
 
-      {/* 내용 */}
-      <div className="p-6">
+      {/* 제목·본문 — 길면 **여기만** 스크롤된다.
+          `min-h-0` 이 없으면 세로 배치에서 자식이 제 내용 높이만큼 버텨서
+          스크롤이 생기지 않고 카드가 화면 밖으로 밀린다. */}
+      <div className="min-h-0 overflow-y-auto px-6 pt-6">
         <h2 className="text-xl font-black text-gray-900 mb-2">{popup.title}</h2>
         {popup.content && (
-          <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap mb-4">{popup.content}</p>
+          <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-wrap">{popup.content}</p>
         )}
-        <div className="flex items-center justify-between gap-3">
-          {popup.linkUrl ? (
-            <a
-              href={popup.linkUrl}
-              /* 사이트 안이면 같은 탭. 밖이면 새 탭 + `noopener noreferrer` 그대로.
-                 `href` 는 남겨 둔다 — 가운데 클릭·새 탭으로 열기가 동작해야 하고,
-                 자바스크립트가 막혀도 링크는 눌러진다. */
-              target={internal ? undefined : "_blank"}
-              rel={internal ? undefined : "noopener noreferrer"}
-              onClick={
-                onLinkClick
-                  ? (e) => {
-                      // 사이트 안 링크만 기본 이동을 막고 라우터로 옮긴다.
-                      // 수식 키(새 탭으로 열기)를 누른 경우는 브라우저에 맡긴다.
-                      if (internal && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
-                        e.preventDefault();
-                      }
-                      onLinkClick(popup);
+      </div>
+
+      {/* 버튼 줄 — **스크롤 밖**이다. 글이 길거나 이미지가 커도
+          자세히 보기·오늘 하루 안 보기·닫기가 항상 화면 안에 있어야 한다. */}
+      <div className="shrink-0 flex items-center justify-between gap-3 px-6 pb-6 pt-4">
+        {popup.linkUrl ? (
+          <a
+            href={popup.linkUrl}
+            /* 사이트 안이면 같은 탭. 밖이면 새 탭 + `noopener noreferrer` 그대로.
+               `href` 는 남겨 둔다 — 가운데 클릭·새 탭으로 열기가 동작해야 하고,
+               자바스크립트가 막혀도 링크는 눌러진다. */
+            target={internal ? undefined : "_blank"}
+            rel={internal ? undefined : "noopener noreferrer"}
+            onClick={
+              onLinkClick
+                ? (e) => {
+                    // 사이트 안 링크만 기본 이동을 막고 라우터로 옮긴다.
+                    // 수식 키(새 탭으로 열기)를 누른 경우는 브라우저에 맡긴다.
+                    if (internal && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
+                      e.preventDefault();
                     }
-                  : undefined
-              }
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
-            >
-              {popup.linkLabel || "자세히 보기"}
-              {internal ? (
-                <ArrowRight className="w-3.5 h-3.5" />
-              ) : (
-                /* 새 탭으로 열린다는 것을 모양으로 알린다. */
-                <ExternalLink className="w-3.5 h-3.5" />
-              )}
-            </a>
-          ) : <div />}
-          <div className="flex items-center gap-2">
-            {!isPreview && (
-              <button
-                onClick={onDismissToday}
-                className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
-              >
-                오늘 하루 안 보기
-              </button>
+                    onLinkClick(popup);
+                  }
+                : undefined
+            }
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold hover:bg-blue-700 transition-colors"
+          >
+            {popup.linkLabel || "자세히 보기"}
+            {internal ? (
+              <ArrowRight className="w-3.5 h-3.5" />
+            ) : (
+              /* 새 탭으로 열린다는 것을 모양으로 알린다. */
+              <ExternalLink className="w-3.5 h-3.5" />
             )}
+          </a>
+        ) : <div />}
+        <div className="flex items-center gap-2">
+          {!isPreview && (
             <button
-              onClick={onClose}
-              className="px-3 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors"
+              onClick={onDismissToday}
+              className="text-xs text-gray-400 hover:text-gray-600 transition-colors whitespace-nowrap"
             >
-              닫기
+              오늘 하루 안 보기
             </button>
-          </div>
+          )}
+          <button
+            onClick={onClose}
+            className="px-3 py-2 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-colors"
+          >
+            닫기
+          </button>
         </div>
       </div>
     </motion.div>
